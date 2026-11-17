@@ -13,7 +13,7 @@ const { Pool } = require("pg");
 const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 })
   : null;
-const EMPTY_DB = { users: [], transactions: [], requests: [] };
+const EMPTY_DB = { users: [], transactions: [], requests: [], activeMines: {} };
 let dbCache = null;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -23,7 +23,7 @@ if (!pool && !fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify(E
 function readDB() {
   if (dbCache) return dbCache;
   try { return JSON.parse(fs.readFileSync(DB_FILE, "utf8")); }
-  catch { return { users: [], transactions: [], requests: [] }; }
+  catch { return { users: [], transactions: [], requests: [], activeMines: {} }; }
 }
 async function writeDB(db) {
   dbCache = db;
@@ -47,9 +47,11 @@ async function initDB() {
       dbCache = EMPTY_DB;
       await pool.query("INSERT INTO bloxygu_state (id, state) VALUES (1, $1::jsonb)", [JSON.stringify(dbCache)]);
     }
+    dbCache.activeMines ||= {};
     console.log("Bloxygu database: PostgreSQL");
   } else {
     dbCache = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    dbCache.activeMines ||= {};
     console.log("Bloxygu database: local JSON (development only)");
   }
 }
@@ -205,7 +207,9 @@ app.post("/api/game", auth, async (req, res) => {
 });
 
 // Mines is a server-managed round: the client never receives mine positions before cashout.
-const mineRounds = new Map();
+const mineRounds = new Map(Object.entries(dbCache.activeMines || {}).map(([userId, round]) => [userId, {
+  ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
+}]));
 app.post("/api/mines/start", auth, async (req, res) => {
   const bet = Math.floor(Number(req.body.bet));
   const mines = Math.floor(Number(req.body.mines));
@@ -215,7 +219,9 @@ app.post("/api/mines/start", auth, async (req, res) => {
   if (mineRounds.has(req.user.id)) return res.status(409).json({ error: "Finish or cash out your current Mines round first." });
   const positions = new Set();
   while (positions.size < mines) positions.add(Math.floor(Math.random() * 25));
-  mineRounds.set(req.user.id, { bet, mines, positions, picks: new Set(), multiplier: 1 });
+  const round = { bet, mines, positions, picks: new Set(), multiplier: 1 };
+  mineRounds.set(req.user.id, round);
+  req.db.activeMines[req.user.id] = { bet, mines, positions: Array.from(positions), picks: [], multiplier: 1 };
   req.user.credits -= bet;
   transaction(req.db, req.user, "mines-start", -bet, "Started Mines round");
   await writeDB(req.db);
@@ -234,12 +240,15 @@ app.post("/api/mines/pick", auth, async (req, res) => {
   round.picks.add(tile);
   if (round.positions.has(tile)) {
     mineRounds.delete(req.user.id);
+    delete req.db.activeMines[req.user.id];
     transaction(req.db, req.user, "mines-loss", 0, "Hit a mine");
     await writeDB(req.db);
     return res.json({ hit: true, tile, mines: Array.from(round.positions), user: cleanUser(req.user), ended: true });
   }
   const previousSafePicks = round.picks.size - 1;
   round.multiplier *= ((25 - previousSafePicks) / (25 - round.mines - previousSafePicks)) * 0.97;
+  req.db.activeMines[req.user.id] = { bet: round.bet, mines: round.mines, positions: Array.from(round.positions), picks: Array.from(round.picks), multiplier: round.multiplier };
+  await writeDB(req.db);
   res.json({ hit: false, tile, safePicks: round.picks.size, multiplier: Number(round.multiplier.toFixed(3)), ended: false });
 });
 app.post("/api/mines/cashout", auth, async (req, res) => {
@@ -248,6 +257,7 @@ app.post("/api/mines/cashout", auth, async (req, res) => {
   const payout = Math.floor(round.bet * round.multiplier);
   req.user.credits += payout;
   mineRounds.delete(req.user.id);
+  delete req.db.activeMines[req.user.id];
   transaction(req.db, req.user, "mines-cashout", payout, "Cashed out Mines round");
   await writeDB(req.db);
   res.json({ payout, multiplier: Number(round.multiplier.toFixed(3)), user: cleanUser(req.user), ended: true });
