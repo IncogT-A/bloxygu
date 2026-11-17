@@ -141,6 +141,7 @@ const gameInfo = {
   upgrader: ["Upgrader", "Choose a multiplier. Higher targets have lower win chances."]
 };
 function setGame(game) {
+  if (activeMines && game !== currentGame) { toast("Cash out your Mines round before switching games."); return; }
   currentGame = game; if (game === "coinflip") selectedChoice = "heads"; if (game === "dice") selectedChoice = "red"; document.querySelectorAll(".game-tab").forEach(b => b.classList.toggle("active", b.dataset.game === game));
   $("#gameTitle").textContent = gameInfo[game][0]; $("#gameDescription").textContent = gameInfo[game][1];
   $("#gameResult").textContent = "Place a demo bet to play.";
@@ -203,5 +204,22 @@ $("#playGame").addEventListener("click", async () => {
 async function init() {
   try { const data = await api("/api/me"); updateUser(data.user); } catch { updateUser(null); }
   setGame("dice");
+  if (me) {
+    try {
+      const state = await api("/api/mines/state");
+      if (state.active) {
+        setGame("mines"); activeMines = true;
+        $("#gameOptions").innerHTML = '<div class="mine-board">' + Array.from({length:25},(_,i)=>'<button class="mine-tile" data-tile="' + i + '">?</button>').join("") + '</div>';
+        $("#gameOptions").querySelectorAll("[data-tile]").forEach(btn => {
+          const tile = Number(btn.dataset.tile);
+          if (state.picks.includes(tile)) { btn.disabled = true; btn.textContent = "✓"; btn.classList.add("safe"); }
+          else btn.addEventListener("click", () => pickMineTile(tile, btn));
+        });
+        $("#gameResult").textContent = state.safePicks + " safe picks · " + state.multiplier + "× current cashout";
+        $("#playGame").textContent = "Cash out";
+        showPage("games");
+      }
+    } catch {}
+  }
 }
 init();
