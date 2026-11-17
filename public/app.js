@@ -148,7 +148,6 @@ function setGame(game) {
   const opts = $("#gameOptions");
   if (game === "dice") opts.innerHTML = ["red","blue","green","purple"].map(c => '<button class="choice ' + (selectedChoice === c ? "selected" : "") + '" data-choice="' + c + '">' + c[0].toUpperCase() + c.slice(1) + '</button>').join("");
   if (game === "coinflip") opts.innerHTML = '<button class="choice selected" data-choice="heads">Heads</button><button class="choice" data-choice="tails">Tails</button>';
-  activeMines = false;
   $("#playGame").textContent = "Play round";
   if (game === "mines") opts.innerHTML = '<label class="control-label">Mine count</label><input id="mineCount" class="field" type="number" min="1" max="24" value="3"><p class="small-note">Pick safe tiles, then cash out.</p>';
   if (game === "upgrader") opts.innerHTML = '<label class="control-label">Target multiplier</label><input id="targetMultiplier" class="field" type="number" min="1.1" max="10" step=".1" value="2">';
