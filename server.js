@@ -6,7 +6,7 @@ const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, "data");
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -16,7 +16,7 @@ function readDB() {
   try { return JSON.parse(fs.readFileSync(DB_FILE, "utf8")); }
   catch { return { users: [], transactions: [], requests: [] }; }
 }
-function writeDB(db) { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
+function writeDB(db) { const temp = DB_FILE + ".tmp"; fs.writeFileSync(temp, JSON.stringify(db, null, 2)); fs.renameSync(temp, DB_FILE); }
 function cleanUser(user) {
   return { id: user.id, username: user.username, credits: user.credits, roblox: user.roblox || "", createdAt: user.createdAt };
 }
@@ -35,13 +35,27 @@ function transaction(db, user, type, amount, note) {
 }
 
 app.use(express.json({ limit: "1mb" }));
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) throw new Error("SESSION_SECRET must be configured in production.");
+app.set("trust proxy", 1);
 app.use(session({
   name: "bloxygu.sid",
-  secret: process.env.SESSION_SECRET || "change-this-before-production-bloxygu",
+  secret: process.env.SESSION_SECRET || "bloxygu-local-development-secret-only",
   resave: false,
   saveUninitialized: false,
   cookie: { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 7 * 24 * 60 * 60 * 1000 }
 }));
+
+const authAttempts = new Map();
+function limitAuth(req, res, next) {
+  const key = req.ip + ":" + req.path;
+  const now = Date.now();
+  const entry = authAttempts.get(key) || { count: 0, start: now };
+  if (now - entry.start > 15 * 60 * 1000) { entry.count = 0; entry.start = now; }
+  entry.count += 1; authAttempts.set(key, entry);
+  if (entry.count > 12) return res.status(429).json({ error: "Too many attempts. Wait 15 minutes and try again." });
+  next();
+}
+app.get("/api/health", (req, res) => res.json({ ok: true, service: "bloxygu", time: new Date().toISOString() }));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/me", (req, res) => {
@@ -51,7 +65,7 @@ app.get("/api/me", (req, res) => {
   res.json({ user: user ? cleanUser(user) : null });
 });
 
-app.post("/api/register", async (req, res) => {
+app.post("/api/register", limitAuth, async (req, res) => {
   const username = String(req.body.username || "").trim();
   const password = String(req.body.password || "");
   if (!/^[a-zA-Z0-9_]{3,18}$/.test(username)) return res.status(400).json({ error: "Username must be 3–18 letters, numbers or underscores." });
@@ -66,7 +80,7 @@ app.post("/api/register", async (req, res) => {
   res.json({ user: cleanUser(user) });
 });
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", limitAuth, async (req, res) => {
   const username = String(req.body.username || "").trim();
   const password = String(req.body.password || "");
   const db = readDB();
@@ -76,7 +90,7 @@ app.post("/api/login", async (req, res) => {
   res.json({ user: cleanUser(user) });
 });
 
-app.post("/api/logout", (req, res) => req.session.destroy(() => res.json({ ok: true })));
+app.post("/api/logout", (req, res) => req.session.destroy(() => { res.clearCookie("bloxygu.sid"); res.json({ ok: true }); }));
 
 app.post("/api/daily", auth, (req, res) => {
   const now = Date.now();
@@ -89,11 +103,16 @@ app.post("/api/daily", auth, (req, res) => {
 });
 
 app.get("/api/transactions", auth, (req, res) => {
-  res.json({ transactions: req.db.transactions.filter(t => t.userId === req.user.id).slice(0, 50) });
+  res.json({ transactions: req.db.transactions.filter(t => t.userId === req.user.id).slice(0, 100) });
+});
+
+app.get("/api/requests", auth, (req, res) => {
+  res.json({ requests: req.db.requests.filter(item => item.userId === req.user.id).slice(0, 50) });
 });
 
 app.post("/api/profile", auth, (req, res) => {
-  const roblox = String(req.body.roblox || "").trim().slice(0, 20);
+  const roblox = String(req.body.roblox || "").trim();
+  if (roblox && !/^[a-zA-Z0-9_]{3,20}$/.test(roblox)) return res.status(400).json({ error: "Roblox username must be 3–20 letters, numbers or underscores." });
   req.user.roblox = roblox;
   writeDB(req.db);
   res.json({ user: cleanUser(req.user), note: "Roblox username saved. This does not verify account ownership." });
@@ -146,6 +165,49 @@ app.post("/api/game", auth, (req, res) => {
   transaction(req.db, req.user, game, payout - bet, win ? "Won demo game" : "Lost demo game");
   writeDB(req.db);
   res.json({ win, payout, net: payout - bet, result, user: cleanUser(req.user) });
+});
+
+// Mines is a server-managed round: the client never receives mine positions before cashout.
+const mineRounds = new Map();
+app.post("/api/mines/start", auth, (req, res) => {
+  const bet = Math.floor(Number(req.body.bet));
+  const mines = Math.floor(Number(req.body.mines));
+  if (!Number.isFinite(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
+  if (!Number.isInteger(mines) || mines < 1 || mines > 24) return res.status(400).json({ error: "Choose 1–24 mines." });
+  if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
+  if (mineRounds.has(req.user.id)) return res.status(409).json({ error: "Finish or cash out your current Mines round first." });
+  const positions = new Set();
+  while (positions.size < mines) positions.add(Math.floor(Math.random() * 25));
+  mineRounds.set(req.user.id, { bet, mines, positions, picks: new Set(), multiplier: 1 });
+  req.user.credits -= bet;
+  transaction(req.db, req.user, "mines-start", -bet, "Started Mines round");
+  writeDB(req.db);
+  res.json({ user: cleanUser(req.user), safePicks: 0, multiplier: 1, active: true });
+});
+app.post("/api/mines/pick", auth, (req, res) => {
+  const round = mineRounds.get(req.user.id);
+  if (!round) return res.status(400).json({ error: "Start a Mines round first." });
+  const tile = Number(req.body.tile);
+  if (!Number.isInteger(tile) || tile < 0 || tile > 24 || round.picks.has(tile)) return res.status(400).json({ error: "Choose an unpicked tile." });
+  round.picks.add(tile);
+  if (round.positions.has(tile)) {
+    mineRounds.delete(req.user.id);
+    transaction(req.db, req.user, "mines-loss", 0, "Hit a mine");
+    writeDB(req.db);
+    return res.json({ hit: true, tile, mines: Array.from(round.positions), user: cleanUser(req.user), ended: true });
+  }
+  round.multiplier = (1 / (1 - round.mines / (25 - round.picks.size + 1))) * round.multiplier * 0.97;
+  res.json({ hit: false, tile, safePicks: round.picks.size, multiplier: Number(round.multiplier.toFixed(3)), ended: false });
+});
+app.post("/api/mines/cashout", auth, (req, res) => {
+  const round = mineRounds.get(req.user.id);
+  if (!round || round.picks.size < 1) return res.status(400).json({ error: "Pick at least one safe tile before cashing out." });
+  const payout = Math.floor(round.bet * round.multiplier);
+  req.user.credits += payout;
+  mineRounds.delete(req.user.id);
+  transaction(req.db, req.user, "mines-cashout", payout, "Cashed out Mines round");
+  writeDB(req.db);
+  res.json({ payout, multiplier: Number(round.multiplier.toFixed(3)), user: cleanUser(req.user), ended: true });
 });
 
 app.post("/api/requests", auth, (req, res) => {
