@@ -161,18 +161,51 @@ app.post("/api/requests", auth, (req, res) => {
 app.get("/api/pets", async (req, res) => {
   try {
     const response = await fetch("https://ps99.biggamesapi.io/api/collection/Pets");
-    if (!response.ok) throw new Error("Pet API unavailable");
+    if (!response.ok) throw new Error("Pet collection unavailable");
     const payload = await response.json();
-    const pets = (payload.data || []).map(p => ({
-      id: p.configName || p.name || String(p.id || ""),
-      name: p.configName || p.name || "Unknown pet",
-      type: p.category || p.rarity || "Pet",
-      image: p.thumbnail || p.icon || "",
-      goldenImage: p.goldenThumbnail || "",
-      variants: ["Normal", ...(p.goldenThumbnail ? ["Golden"] : [])]
-    }));
+    if (!Array.isArray(payload.data)) throw new Error("Invalid pet collection response");
+
+    // BIG Games exposes actual variant flags through /api/exists:
+    // pt=1 Golden, pt=2 Rainbow, sh=1 Shiny. Shiny combines with pt.
+    let variantsByPet = new Map();
+    let variantsKnown = false;
+    try {
+      const existsResponse = await fetch("https://ps99.biggamesapi.io/api/exists");
+      if (existsResponse.ok) {
+        const existsPayload = await existsResponse.json();
+        if (Array.isArray(existsPayload.data)) {
+          variantsKnown = true;
+          for (const item of existsPayload.data) {
+            if (item.category !== "Pet" || !item.configData || !item.configData.id) continue;
+            const id = String(item.configData.id);
+            const pt = Number(item.configData.pt || 0);
+            const shiny = item.configData.sh === 1 || item.configData.sh === true;
+            const base = pt === 1 ? "Golden" : pt === 2 ? "Rainbow" : "Normal";
+            const variant = shiny ? (base === "Normal" ? "Shiny" : "Shiny " + base) : base;
+            if (!variantsByPet.has(id)) variantsByPet.set(id, new Set());
+            variantsByPet.get(id).add(variant);
+          }
+        }
+      }
+    } catch { /* Keep catalog usable if variant lookup is temporarily unavailable. */ }
+
+    const pets = payload.data.map(p => {
+      const id = String(p.configName || p.name || p.id || "");
+      const config = p.configData || {};
+      const knownVariants = variantsByPet.get(id);
+      return {
+        id,
+        name: config.name || p.configName || p.name || "Unknown pet",
+        type: p.category || config.category || "Pet",
+        rarity: config.rarity || "",
+        image: config.thumbnail || p.thumbnail || p.icon || "",
+        goldenImage: config.goldenThumbnail || p.goldenThumbnail || "",
+        variants: variantsKnown ? Array.from(knownVariants || []) : [],
+        variantsKnown
+      };
+    });
     res.set("Cache-Control", "public, max-age=3600");
-    res.json({ pets });
+    res.json({ pets, variantsKnown });
   } catch {
     res.status(502).json({ error: "The live pet catalog is temporarily unavailable.", pets: [] });
   }
