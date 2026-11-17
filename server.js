@@ -262,7 +262,7 @@ app.get("/api/recent-wins", (req, res) => {
 });
 
 function publicBot(lobby) {
-  return { id: lobby.id, name: lobby.name, game: lobby.game, style: lobby.style, status: lobby.status, rounds: lobby.rounds || 0, playerScore: lobby.playerScore || 0, botScore: lobby.botScore || 0, createdAt: lobby.createdAt };
+  return { id: lobby.id, name: lobby.name, game: lobby.game, style: lobby.style, status: lobby.status, rounds: lobby.rounds || 0, playerScore: lobby.playerScore || 0, botScore: lobby.botScore || 0, playerName: lobby.playerName || "", playerColors: lobby.playerColors || [], botColors: lobby.botColors || [], bet: lobby.bet || 0, history: lobby.history || [], winner: lobby.winner || null, payout: lobby.payout || 0, createdAt: lobby.createdAt };
 }
 app.get("/api/arcade/bots", (req, res) => {
   const bots = (readDB().botLobbies || []).filter(b => b.status === "waiting").map(publicBot);
@@ -304,36 +304,83 @@ app.delete("/api/admin/bots/:id", auth, adminAuth, async (req, res) => {
   req.db.botLobbies = (req.db.botLobbies || []).filter(b => b.id !== req.params.id);
   await writeDB(req.db); res.json({ ok: true });
 });
+
 app.post("/api/arcade/bots/:id/join", auth, async (req, res) => {
   const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.status === "waiting");
   if (!bot) return res.status(404).json({ error: "This demo bot is no longer waiting." });
   if ((req.db.botLobbies || []).some(b => b.playerId === req.user.id && b.status === "playing")) return res.status(409).json({ error: "Finish your current bot match first." });
   if (req.db.activeMines?.[req.user.id] || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your current game first." });
-  bot.status = "playing"; bot.playerId = req.user.id; bot.playerName = req.user.displayName || req.user.username; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0;
-  await writeDB(req.db); res.json({ match: publicBot(bot) });
+  const colors = ["orange","yellow","blue","purple"];
+  if (bot.game === "dice") {
+    const chosen = Array.isArray(req.body.colors) ? req.body.colors.map(String) : [];
+    const bet = Math.floor(Number(req.body.bet));
+    if (chosen.length !== 2 || new Set(chosen).size !== 2 || chosen.some(c => !colors.includes(c))) return res.status(400).json({ error: "Choose exactly two different colours." });
+    if (!Number.isInteger(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Demo wager must be 10–5,000 credits." });
+    if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
+    const remaining = colors.filter(c => !chosen.includes(c));
+    const botColors = bot.style === "calm" ? remaining : remaining.sort(() => crypto.randomInt(2) ? 1 : -1);
+    bot.playerColors = chosen; bot.botColors = botColors.slice(0,2); bot.bet = bet;
+    bot.history = []; bot.playerScore = 0; bot.botScore = 0; bot.rounds = 0;
+    req.user.credits -= bet;
+    transaction(req.db, req.user, "dice-duel-start", -bet, "Joined demo Color Dice duel");
+  }
+  bot.status = "playing"; bot.playerId = req.user.id; bot.playerName = req.user.displayName || req.user.username;
+  await writeDB(req.db); res.json({ match: publicBot(bot), user: cleanUser(req.user) });
 });
 app.post("/api/arcade/bots/:id/round", auth, async (req, res) => {
   const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.status === "playing" && b.playerId === req.user.id);
   if (!bot) return res.status(404).json({ error: "You are not in this demo match." });
-  const allowed = bot.game === "dice" ? ["red","blue","green","purple"] : ["heads","tails"];
-  const choice = String(req.body.choice || "");
-  if (!allowed.includes(choice)) return res.status(400).json({ error: "Choose a valid move." });
-  const landed = bot.game === "dice" ? ["red","blue","green","purple"][crypto.randomInt(4)] : (crypto.randomInt(2) ? "heads" : "tails");
-  const botChoice = bot.style === "calm" ? allowed[bot.rounds % allowed.length] : allowed[crypto.randomInt(allowed.length)];
-  const playerCorrect = choice === landed, botCorrect = botChoice === landed;
-  const outcome = playerCorrect && !botCorrect ? "player" : botCorrect && !playerCorrect ? "bot" : "draw";
+  if (bot.game !== "dice") {
+    const allowed = ["heads","tails"], choice = String(req.body.choice || "");
+    if (!allowed.includes(choice)) return res.status(400).json({ error: "Choose heads or tails." });
+    const landed = crypto.randomInt(2) ? "heads" : "tails";
+    const botChoice = allowed[crypto.randomInt(allowed.length)];
+    const outcome = choice === landed && botChoice !== landed ? "player" : botChoice === landed && choice !== landed ? "bot" : "draw";
+    if (outcome === "player") bot.playerScore++; if (outcome === "bot") bot.botScore++;
+    bot.rounds++;
+    if (bot.rounds >= 5 || bot.playerScore >= 3 || bot.botScore >= 3) bot.status = "completed";
+    await writeDB(req.db); return res.json({ landed, choice, botChoice, outcome, match: publicBot(bot) });
+  }
+  if (!Array.isArray(bot.playerColors) || bot.playerColors.length !== 2 || !Array.isArray(bot.botColors) || bot.botColors.length !== 2) return res.status(409).json({ error: "This match needs to be restarted." });
+  const palette = ["orange","yellow","blue","purple"];
+  let dice = [], playerHits = 0, botHits = 0, rerolls = 0;
+  do {
+    dice = Array.from({length:4}, () => palette[crypto.randomInt(palette.length)]);
+    playerHits = dice.filter(c => bot.playerColors.includes(c)).length;
+    botHits = dice.filter(c => bot.botColors.includes(c)).length;
+    rerolls++;
+  } while (playerHits === botHits && rerolls < 20);
+  const outcome = playerHits > botHits ? "player" : playerHits < botHits ? "bot" : "draw";
   if (outcome === "player") bot.playerScore++;
   if (outcome === "bot") bot.botScore++;
   bot.rounds++;
-  if (bot.rounds >= 5 || bot.playerScore >= 3 || bot.botScore >= 3) bot.status = "completed";
+  const round = { number: bot.rounds, dice, playerHits, botHits, outcome, rerolls: rerolls - 1 };
+  bot.history ||= []; bot.history.unshift(round); bot.history = bot.history.slice(0, 8);
+  let payout = 0, winner = null;
+  if (bot.playerScore >= 2 || bot.botScore >= 2 || bot.rounds >= 7) {
+    bot.status = "completed";
+    winner = bot.playerScore > bot.botScore ? "player" : bot.botScore > bot.playerScore ? "bot" : "draw";
+    if (winner === "player") {
+      payout = bot.bet * 2; req.user.credits += payout;
+      transaction(req.db, req.user, "dice-duel", payout, "Won demo Color Dice duel");
+    } else if (winner === "draw") {
+      payout = bot.bet; req.user.credits += payout;
+      transaction(req.db, req.user, "dice-duel-refund", payout, "Draw — demo wager refunded");
+    } else transaction(req.db, req.user, "dice-duel", 0, "Lost demo Color Dice duel");
+    bot.winner = winner; bot.payout = payout;
+  }
   await writeDB(req.db);
-  res.json({ landed, choice, botChoice, outcome, match: publicBot(bot), winner: bot.status === "completed" ? (bot.playerScore > bot.botScore ? "player" : bot.botScore > bot.playerScore ? "bot" : "draw") : null });
+  res.json({ round, match: publicBot(bot), winner, payout, user: cleanUser(req.user) });
 });
 app.post("/api/arcade/bots/:id/leave", auth, async (req, res) => {
   const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.playerId === req.user.id);
   if (!bot) return res.status(404).json({ error: "Match not found." });
-  bot.status = "waiting"; bot.playerId = null; bot.playerName = null; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0;
-  await writeDB(req.db); res.json({ ok: true });
+  if (bot.status === "playing" && bot.game === "dice" && bot.bet) {
+    req.user.credits += bot.bet;
+    transaction(req.db, req.user, "dice-duel-refund", bot.bet, "Left demo duel — wager refunded");
+  }
+  bot.status = "waiting"; bot.playerId = null; bot.playerName = null; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0; bot.history = []; bot.winner = null; bot.payout = 0;
+  await writeDB(req.db); res.json({ ok: true, user: cleanUser(req.user) });
 });
 app.post("/api/admin/requests/:id/status", auth, adminAuth, async (req, res) => {
   const status = String(req.body.status || "");
