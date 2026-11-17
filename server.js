@@ -5,11 +5,11 @@ const FileStore = require("session-file-store")(session);
 const PgSession = require("connect-pg-simple")(session);
 const fs = require("fs");
 const path = require("path");
+const robloxProfile = require("./src/services/roblox");
+const { DATA_DIR, DB_FILE, PORT } = require("./src/config");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
-const DB_FILE = path.join(DATA_DIR, "db.json");
+
 const { Pool } = require("pg");
 const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 })
@@ -105,17 +105,8 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 7 * 24 * 60 * 60 * 1000 }
 }));
 
-const authAttempts = new Map();
-function limitAuth(req, res, next) {
-  const key = req.ip + ":" + req.path;
-  const now = Date.now();
-  const entry = authAttempts.get(key) || { count: 0, start: now };
-  if (now - entry.start > 15 * 60 * 1000) { entry.count = 0; entry.start = now; }
-  entry.count += 1; authAttempts.set(key, entry);
-  if (entry.count > 12) return res.status(429).json({ error: "Too many attempts. Wait 15 minutes and try again." });
-  next();
-}
-app.get("/api/health", (req, res) => res.json({ ok: true, service: "bloxygu", time: new Date().toISOString() }));
+const { limitAuth } = require("./src/middleware/rate-limit");
+
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/me", (req, res) => {
@@ -128,23 +119,8 @@ app.get("/api/me", (req, res) => {
 
 const crypto = require("crypto");
 const challengeWords = ["amber","blox","comet","daisy","dragon","ember","frost","galaxy","glimmer","jade","lucky","meadow","nebula","nova","pixel","quest","rainbow","rocket","shadow","spark","tiger","velvet","willow","zen"];
-async function robloxProfile(username) {
-  const lookup = await fetch("https://users.roblox.com/v1/usernames/users", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ usernames: [username], excludeBannedUsers: true })
-  });
-  if (!lookup.ok) throw new Error("Roblox lookup is temporarily unavailable. Try again.");
-  const found = (await lookup.json()).data?.[0];
-  if (!found) return null;
-  const [profileResponse, avatarResponse] = await Promise.all([
-    fetch("https://users.roblox.com/v1/users/" + encodeURIComponent(found.id)),
-    fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" + encodeURIComponent(found.id) + "&size=150x150&format=Png&isCircular=false")
-  ]);
-  if (!profileResponse.ok) throw new Error("Could not read that Roblox profile. Try again.");
-  const profile = await profileResponse.json();
-  const avatarData = avatarResponse.ok ? await avatarResponse.json() : {};
-  return { id: String(found.id), username: profile.name || found.name, displayName: profile.displayName || found.displayName || found.name, description: String(profile.description || ""), avatarUrl: avatarData.data?.[0]?.imageUrl || "" };
-}
+
+
 app.post("/api/roblox/lookup", limitAuth, async (req, res) => {
   const username = String(req.body.username || "").trim();
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: "Enter a valid Roblox username." });
