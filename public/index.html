@@ -15,7 +15,7 @@
   <div class="glow glow-a"></div><div class="glow glow-b"></div>
   <header class="topbar">
     <a class="brand" href="#"><span class="brand-mark">B</span><span>bloxy<span class="accent">gu</span></span></a>
-    <nav><button class="nav-link active" data-page="home">Home</button><button class="nav-link" data-page="pets">Pet index</button><button class="nav-link" data-page="games">Games</button><button class="nav-link" data-page="leaderboard">Leaderboard</button></nav>
+    <nav><button class="nav-link active" data-page="home">Home</button><button class="nav-link" data-page="pets">Pet index</button><button class="nav-link" data-page="games">Games</button><button class="nav-link" data-page="leaderboard">Leaderboard</button><button id="adminNav" class="nav-link hidden" data-page="admin">Admin</button></nav>
     <div class="account-area"><span id="balance" class="balance hidden">◆ 25,000</span><button id="accountButton" class="button button-soft">Log in</button></div>
   </header>
   <main>
@@ -46,6 +46,27 @@
       <div class="game-panel"><div class="game-info"><div class="eyebrow">BLOXYGU ARCADE</div><h2 id="gameTitle">Color Dice Duel</h2><p id="gameDescription">Pick a color. Match the roll and win 3× your bet.</p><div class="game-display" id="gameDisplay"><div class="dice-face">?</div></div><div id="gameResult" class="game-result">Place a demo bet to play.</div></div>
         <div class="game-controls"><label class="control-label">Your bet</label><input id="bet" class="field bet-field" type="number" min="10" max="5000" value="100"><div id="gameOptions" class="options"><button class="choice selected" data-choice="red">Red</button><button class="choice" data-choice="blue">Blue</button><button class="choice" data-choice="green">Green</button><button class="choice" data-choice="purple">Purple</button></div><button id="playGame" class="button button-primary full">Play round <span>↗</span></button><div class="small-note">Min 10 · Max 5,000 demo credits</div></div>
       </div>
+      <div class="bot-arena">
+        <div class="section-head"><div><div class="eyebrow">LIVE DEMO MATCHMAKING</div><h2>Play against a Bloxygu bot.</h2><p class="muted">Demo bots are clearly labelled and use no credits or real items.</p></div><button id="refreshBots" class="button button-soft">Refresh</button></div>
+        <div id="botArena" class="bot-arena-content"><p class="muted">Looking for waiting demo bots...</p></div>
+      </div>
+    </section>
+
+    <section id="adminPage" class="page hidden">
+      <div class="page-heading"><div class="eyebrow">STAFF CONTROL ROOM</div><h1>Admin <span class="gradient-text">console.</span></h1><p>Manage demo bots, review manual requests, and inspect platform activity. No real item transfers happen here.</p></div>
+      <div id="adminStats" class="admin-stats"></div>
+      <div class="admin-layout">
+        <div class="admin-card"><div class="section-head"><div><div class="eyebrow">BOT STUDIO</div><h2>Launch a demo opponent.</h2></div></div>
+          <label class="control-label">Bot display name</label><input id="botName" class="field" maxlength="24" value="Bloxygu Demo Bot">
+          <label class="control-label">Game</label><select id="botGame" class="field"><option value="dice">Color Dice Duel</option><option value="coinflip">Coinflip</option></select>
+          <label class="control-label">Bot style</label><select id="botStyle" class="field"><option value="balanced">Balanced</option><option value="bold">Bold</option><option value="calm">Calm</option></select>
+          <button id="createBot" class="button button-primary full">Launch bot lobby</button><p class="small-note">Bot waits in the public demo arena until a player joins. Five rounds max per match.</p>
+        </div>
+        <div class="admin-card"><div class="eyebrow">BOT LOBBIES</div><h2>Active demo bots</h2><div id="adminBots" class="admin-list">Loading...</div></div>
+      </div>
+      <div class="admin-card admin-wide"><div class="eyebrow">MANUAL REVIEW</div><h2>Deposit / withdrawal requests</h2><p class="small-note">Status changes are administrative notes only. They do not transfer pets or items.</p><div id="adminRequests" class="admin-list">Loading...</div></div>
+      <div class="admin-card admin-wide"><div class="eyebrow">COMMUNITY</div><h2>Recent accounts</h2><div id="adminUsers" class="admin-list">Loading...</div></div>
+      <p id="adminNotice" class="small-note"></p>
     </section>
 
     <section id="leaderboardPage" class="page hidden">
