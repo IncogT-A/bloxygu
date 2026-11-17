@@ -141,7 +141,7 @@ const gameInfo = {
   upgrader: ["Upgrader", "Choose a multiplier. Higher targets have lower win chances."]
 };
 function setGame(game) {
-  if (activeMines && game !== currentGame) { toast("Cash out your Mines round before switching games."); return; }
+  if (activeMines) { if (game !== currentGame) toast("Cash out your Mines round before switching games."); return; }
   currentGame = game; if (game === "coinflip") selectedChoice = "heads"; if (game === "dice") selectedChoice = "red"; document.querySelectorAll(".game-tab").forEach(b => b.classList.toggle("active", b.dataset.game === game));
   $("#gameTitle").textContent = gameInfo[game][0]; $("#gameDescription").textContent = gameInfo[game][1];
   $("#gameResult").textContent = "Place a demo bet to play.";
