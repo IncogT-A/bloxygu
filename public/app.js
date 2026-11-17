@@ -285,7 +285,7 @@ async function loadLeaderboard() {
   } catch (e) { $("#leaderboard").textContent = e.message; }
 }
 const gameInfo = {
-  dice: ["Color Dice Duel", "Pick a color. Match the roll and win 3× your bet."],
+  dice: ["Color Dice Duel", "Choose two colours, challenge an opponent, and race to two round wins."],
   coinflip: ["Coinflip", "Call heads or tails. Correct calls pay 2×."],
   mines: ["Mines", "Pick safe tiles, avoid hidden mines, and cash out before you hit one."],
   upgrader: ["Upgrader", "Choose a multiplier. Higher targets have lower win chances."],
@@ -294,6 +294,9 @@ const gameInfo = {
 function setGame(game) {
   if (activeMines || activeBlackjack) { toast("Finish your current round before switching games."); return; }
   currentGame = game; if (game === "coinflip") selectedChoice = "heads"; if (game === "dice") selectedChoice = "red"; document.querySelectorAll(".game-tab").forEach(b => b.classList.toggle("active", b.dataset.game === game));
+  const duelMode = game === "dice";
+  document.querySelector(".game-panel").classList.toggle("hidden", duelMode);
+  $("#botArena").parentElement.classList.toggle("hidden", !duelMode);
   $("#gameTitle").textContent = gameInfo[game][0]; $("#gameDescription").textContent = gameInfo[game][1];
   $("#gameResult").textContent = "Place a demo bet to play.";
   const opts = $("#gameOptions");
