@@ -196,7 +196,8 @@ app.post("/api/mines/pick", auth, (req, res) => {
     writeDB(req.db);
     return res.json({ hit: true, tile, mines: Array.from(round.positions), user: cleanUser(req.user), ended: true });
   }
-  round.multiplier = (1 / (1 - round.mines / (25 - round.picks.size + 1))) * round.multiplier * 0.97;
+  const previousSafePicks = round.picks.size - 1;
+  round.multiplier *= ((25 - previousSafePicks) / (25 - round.mines - previousSafePicks)) * 0.97;
   res.json({ hit: false, tile, safePicks: round.picks.size, multiplier: Number(round.multiplier.toFixed(3)), ended: false });
 });
 app.post("/api/mines/cashout", auth, (req, res) => {
