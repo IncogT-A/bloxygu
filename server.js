@@ -242,6 +242,14 @@ app.get("/api/requests", auth, (req, res) => {
 
 app.post("/api/profile", auth, (req, res) => res.status(410).json({ error: "Roblox accounts can only be linked through profile verification." }));
 
+app.get("/api/recent-wins", (req, res) => {
+  const gameTypes = new Set(["dice", "coinflip", "upgrader", "mines-cashout", "blackjack"]);
+  const wins = readDB().transactions
+    .filter(t => gameTypes.has(t.type) && Number(t.amount) > 0 && !(t.type === "blackjack" && /push/i.test(t.note || "")))
+    .slice(0, 12)
+    .map(t => ({ username: t.username, game: t.type === "mines-cashout" ? "Mines" : t.type === "blackjack" ? "Blackjack" : t.type === "coinflip" ? "Coinflip" : t.type === "upgrader" ? "Upgrader" : "Color Dice", amount: t.amount, createdAt: t.createdAt }));
+  res.json({ wins });
+});
 app.get("/api/leaderboard", (req, res) => {
   const db = readDB();
   res.json({ users: db.users.slice().sort((a, b) => b.credits - a.credits).slice(0, 10).map(u => ({ username: u.username, credits: u.credits })) });
