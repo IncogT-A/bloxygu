@@ -261,6 +261,9 @@ app.get("/api/recent-wins", (req, res) => {
   res.json({ wins });
 });
 
+function hasActiveBotMatch(db, userId) {
+  return (db.botLobbies || []).some(lobby => lobby.playerId === userId && lobby.status === "playing");
+}
 function publicBot(lobby) {
   return { id: lobby.id, name: lobby.name, game: lobby.game, style: lobby.style, status: lobby.status, rounds: lobby.rounds || 0, playerScore: lobby.playerScore || 0, botScore: lobby.botScore || 0, playerName: lobby.playerName || "", playerColors: lobby.playerColors || [], botColors: lobby.botColors || [], bet: lobby.bet || 0, history: lobby.history || [], winner: lobby.winner || null, payout: lobby.payout || 0, createdAt: lobby.createdAt };
 }
@@ -295,16 +298,26 @@ app.post("/api/admin/bots", auth, adminAuth, async (req, res) => {
 app.post("/api/admin/bots/:id/start", auth, adminAuth, async (req, res) => {
   const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id);
   if (!bot) return res.status(404).json({ error: "Demo bot not found." });
+  if (bot.status === "playing") return res.status(409).json({ error: "This bot is in an active match. Finish or stop that match first." });
   bot.status = "waiting"; bot.playerId = null; bot.playerName = null; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0;
   await writeDB(req.db); res.json({ bot: publicBot(bot) });
 });
 app.post("/api/admin/bots/:id/stop", auth, adminAuth, async (req, res) => {
   const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id);
   if (!bot) return res.status(404).json({ error: "Demo bot not found." });
+  if (bot.status === "playing" && bot.playerId && bot.game === "dice" && bot.bet) {
+    const player = req.db.users.find(u => u.id === bot.playerId);
+    if (player) { player.credits += bot.bet; transaction(req.db, player, "dice-duel-refund", bot.bet, "Demo duel stopped by admin — wager refunded"); }
+  }
   bot.status = "stopped"; bot.playerId = null; bot.playerName = null;
   await writeDB(req.db); res.json({ bot: publicBot(bot) });
 });
 app.delete("/api/admin/bots/:id", auth, adminAuth, async (req, res) => {
+  const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id);
+  if (bot?.status === "playing" && bot.playerId && bot.game === "dice" && bot.bet) {
+    const player = req.db.users.find(u => u.id === bot.playerId);
+    if (player) { player.credits += bot.bet; transaction(req.db, player, "dice-duel-refund", bot.bet, "Demo duel deleted by admin — wager refunded"); }
+  }
   req.db.botLobbies = (req.db.botLobbies || []).filter(b => b.id !== req.params.id);
   await writeDB(req.db); res.json({ ok: true });
 });
@@ -312,7 +325,7 @@ app.delete("/api/admin/bots/:id", auth, adminAuth, async (req, res) => {
 app.post("/api/arcade/bots/:id/join", auth, async (req, res) => {
   const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.status === "waiting");
   if (!bot) return res.status(404).json({ error: "This demo bot is no longer waiting." });
-  if ((req.db.botLobbies || []).some(b => b.playerId === req.user.id && b.status === "playing")) return res.status(409).json({ error: "Finish your current bot match first." });
+  if (hasActiveBotMatch(req.db, req.user.id)) return res.status(409).json({ error: "Finish your current bot match first." });
   if (req.db.activeMines?.[req.user.id] || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your current game first." });
   const colors = ["orange","yellow","blue","purple"];
   if (bot.game === "dice") {
@@ -322,7 +335,8 @@ app.post("/api/arcade/bots/:id/join", auth, async (req, res) => {
     if (!Number.isInteger(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Demo wager must be 10–5,000 credits." });
     if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
     const remaining = colors.filter(c => !chosen.includes(c));
-    const botColors = bot.style === "calm" ? remaining : remaining.sort(() => crypto.randomInt(2) ? 1 : -1);
+    for (let i = remaining.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [remaining[i], remaining[j]] = [remaining[j], remaining[i]]; }
+    const botColors = remaining;
     bot.playerColors = chosen; bot.botColors = botColors.slice(0,2); bot.bet = bet;
     bot.history = []; bot.playerScore = 0; bot.botScore = 0; bot.rounds = 0;
     req.user.credits -= bet;
@@ -353,7 +367,7 @@ app.post("/api/arcade/bots/:id/round", auth, async (req, res) => {
     playerHits = dice.filter(c => bot.playerColors.includes(c)).length;
     botHits = dice.filter(c => bot.botColors.includes(c)).length;
     rerolls++;
-  } while (playerHits === botHits && rerolls < 20);
+  } while (playerHits === botHits);
   const outcome = playerHits > botHits ? "player" : playerHits < botHits ? "bot" : "draw";
   if (outcome === "player") bot.playerScore++;
   if (outcome === "bot") bot.botScore++;
@@ -403,7 +417,7 @@ app.post("/api/game", auth, async (req, res) => {
   const game = String(req.body.game || "");
   const bet = Math.floor(Number(req.body.bet));
   if (!Number.isFinite(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
-  if (req.db.activeMines?.[req.user.id] || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your active game round first." });
+  if (req.db.activeMines?.[req.user.id] || req.db.activeBlackjack?.[req.user.id] || hasActiveBotMatch(req.db, req.user.id)) return res.status(409).json({ error: "Finish your active game round first." });
   if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
 
   let win = false, payout = 0, result = {};
@@ -452,7 +466,7 @@ app.post("/api/mines/start", auth, async (req, res) => {
   if (!Number.isFinite(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
   if (!Number.isInteger(mines) || mines < 1 || mines > 24) return res.status(400).json({ error: "Choose 1–24 mines." });
   if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
-  if (mineRounds.has(req.user.id) || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your active game round first." });
+  if (mineRounds.has(req.user.id) || req.db.activeBlackjack?.[req.user.id] || hasActiveBotMatch(req.db, req.user.id)) return res.status(409).json({ error: "Finish your active game round first." });
   const positions = new Set();
   while (positions.size < mines) positions.add(crypto.randomInt(25));
   const round = { bet, mines, positions, picks: new Set(), multiplier: 1 };
@@ -526,7 +540,7 @@ app.post("/api/blackjack/start", auth, async (req, res) => {
   const bet = Math.floor(Number(req.body.bet));
   if (!Number.isInteger(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
   if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
-  if (req.db.activeBlackjack[req.user.id] || req.db.activeMines?.[req.user.id]) return res.status(409).json({ error: "Finish your active game round first." });
+  if (req.db.activeBlackjack[req.user.id] || req.db.activeMines?.[req.user.id] || hasActiveBotMatch(req.db, req.user.id)) return res.status(409).json({ error: "Finish your active game round first." });
   const deck = blackjackDeck();
   const round = { bet, deck, player: [deck.pop(), deck.pop()], dealer: [deck.pop(), deck.pop()], finished: false, outcome: null };
   req.user.credits -= bet;
