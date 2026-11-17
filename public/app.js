@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let me = null, authMode = "login", currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, petLimit = 60;
+let me = null, robloxCandidate = null, robloxChallengeId = null, currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, petLimit = 60;
 
 function toast(message) {
   const el = $("#toast"); el.textContent = message; el.classList.add("show");
@@ -15,7 +15,7 @@ function updateUser(user) {
   me = user;
   $("#balance").classList.toggle("hidden", !me);
   $("#balance").textContent = me ? "◆ " + me.credits.toLocaleString() : "";
-  $("#accountButton").textContent = me ? me.username : "Log in";
+  $("#accountButton").textContent = me ? (me.displayName || me.username) : "Log in";
 }
 function showPage(page) {
   document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
@@ -31,15 +31,14 @@ document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click
 document.querySelectorAll(".modal").forEach(m => m.addEventListener("click", e => { if (e.target === m) m.classList.add("hidden"); }));
 
 function openAuth(mode = "login") {
-  authMode = mode; $("#authTitle").textContent = mode === "login" ? "Log in" : "Create account";
-  $("#authSubmit").textContent = mode === "login" ? "Log in" : "Create account";
-  $("#authSwitch").textContent = mode === "login" ? "Need an account? Sign up" : "Already have an account? Log in";
-  $("#authError").textContent = ""; $("#authModal").classList.remove("hidden");
+  $("#authError").textContent = ""; robloxCandidate = null; robloxChallengeId = null;
+  $("#robloxStep1").classList.remove("hidden"); $("#robloxStep2").classList.add("hidden"); $("#robloxStep3").classList.add("hidden");
+  $("#robloxLookupName").value = ""; $("#authModal").classList.remove("hidden");
 }
 $("#accountButton").addEventListener("click", () => {
   if (!me) return openAuth("login");
-  $("#profileName").textContent = me.username; $("#profileBalance").textContent = me.credits.toLocaleString() + " demo credits";
-  $("#robloxName").value = me.roblox || ""; $("#profileMessage").textContent = "";
+  $("#profileName").textContent = me.displayName || me.username; $("#profileBalance").textContent = me.credits.toLocaleString() + " demo credits";
+  $("#profileRoblox").textContent = me.roblox ? "✓ Verified Roblox: @" + me.roblox : "No verified Roblox account"; $("#profileMessage").textContent = "";
   $("#profileModal").classList.remove("hidden");
   loadAccountActivity();
 });
@@ -56,10 +55,46 @@ $("#dailyClaim").addEventListener("click", async () => {
   try { const data = await api("/api/daily", { method: "POST", body: "{}" }); updateUser(data.user); $("#profileBalance").textContent = me.credits.toLocaleString() + " demo credits"; toast("Daily bonus claimed: +1,000!"); }
   catch (e) { toast(e.message); }
 });
-$("#saveProfile").addEventListener("click", async () => {
-  try { const data = await api("/api/profile", { method: "POST", body: JSON.stringify({ roblox: $("#robloxName").value }) }); updateUser(data.user); $("#profileMessage").textContent = data.note; }
-  catch (e) { toast(e.message); }
+
+
+$("#robloxLookup").addEventListener("click", async () => {
+  $("#authError").textContent = "";
+  const username = $("#robloxLookupName").value.trim();
+  $("#robloxLookup").disabled = true; $("#robloxLookup").textContent = "Looking up...";
+  try {
+    const data = await api("/api/roblox/lookup", { method: "POST", body: JSON.stringify({ username }) });
+    robloxCandidate = data.profile;
+    $("#robloxPreview").innerHTML = (robloxCandidate.avatarUrl ? '<img src="' + escapeAttr(robloxCandidate.avatarUrl) + '" alt="Roblox avatar">' : '<div class="avatar-placeholder">R</div>') + '<div><b>' + escapeHtml(robloxCandidate.displayName) + '</b><span>@' + escapeHtml(robloxCandidate.username) + '</span><small>Roblox ID: ' + escapeHtml(robloxCandidate.userId) + '</small></div>';
+    $("#robloxStep1").classList.add("hidden"); $("#robloxStep2").classList.remove("hidden");
+    if (data.alreadyLinked) $("#authError").textContent = "This account is already linked. Confirm it to sign in.";
+  } catch (e) { $("#authError").textContent = e.message; }
+  finally { $("#robloxLookup").disabled = false; $("#robloxLookup").textContent = "Find my account"; }
 });
+$("#robloxBack").addEventListener("click", () => { $("#robloxStep2").classList.add("hidden"); $("#robloxStep1").classList.remove("hidden"); $("#authError").textContent = ""; });
+$("#robloxConfirm").addEventListener("click", async () => {
+  if (!robloxCandidate) return;
+  $("#authError").textContent = ""; $("#robloxConfirm").disabled = true;
+  try {
+    const data = await api("/api/roblox/verify/start", { method: "POST", body: JSON.stringify({ username: robloxCandidate.username, userId: robloxCandidate.userId }) });
+    robloxChallengeId = data.challengeId; $("#robloxPhrase").textContent = data.phrase;
+    $("#robloxStep2").classList.add("hidden"); $("#robloxStep3").classList.remove("hidden");
+  } catch (e) { $("#authError").textContent = e.message; }
+  finally { $("#robloxConfirm").disabled = false; }
+});
+$("#copyRobloxPhrase").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("#robloxPhrase").textContent); toast("Verification code copied."); }
+  catch { toast("Select and copy the code manually."); }
+});
+$("#robloxVerify").addEventListener("click", async () => {
+  if (!robloxChallengeId) return;
+  $("#robloxVerify").disabled = true; $("#authError").textContent = "";
+  try {
+    const data = await api("/api/roblox/verify/check", { method: "POST", body: JSON.stringify({ challengeId: robloxChallengeId }) });
+    updateUser(data.user); $("#authModal").classList.add("hidden"); toast("Roblox verified. Welcome to Bloxygu!");
+  } catch (e) { $("#authError").textContent = e.message; }
+  finally { $("#robloxVerify").disabled = false; }
+});
+$("#robloxRestart").addEventListener("click", () => { robloxCandidate = null; robloxChallengeId = null; $("#robloxStep3").classList.add("hidden"); $("#robloxStep1").classList.remove("hidden"); $("#authError").textContent = ""; });
 
 async function loadPets() {
   if (petData.length) return renderPets();
