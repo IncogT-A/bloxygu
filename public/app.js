@@ -255,9 +255,8 @@ async function startBlackjack(bet) {
   try {
     const data = await api("/api/blackjack/start", { method: "POST", body: JSON.stringify({ bet }) });
     updateUser(data.user); showBlackjack(data.round); activeBlackjack = !data.round.finished;
-    if (data.round.finished) $("#gameResult").textContent = "Natural blackjack! " + data.round.outcome + " · Payout " + data.payout.toLocaleString();
-    else { $("#gameResult").textContent = "Your move — hit or stand."; $("#gameOptions").innerHTML = '<button id="blackjackHit" class="choice selected">Hit</button><button id="blackjackStand" class="choice">Stand</button>'; bindBlackjackButtons(); }
-    $("#playGame").textContent = "Stand";
+    if (data.round.finished) { $("#gameResult").textContent = "Natural blackjack! " + data.round.outcome + " · Payout " + data.payout.toLocaleString(); $("#playGame").textContent = "Play again"; }
+    else { $("#gameResult").textContent = "Your move — hit or stand."; $("#gameOptions").innerHTML = '<button id="blackjackHit" class="choice selected">Hit</button><button id="blackjackStand" class="choice">Stand</button>'; bindBlackjackButtons(); $("#playGame").textContent = "Stand"; }
   } catch (e) { toast(e.message); }
   finally { $("#playGame").disabled = false; }
 }
