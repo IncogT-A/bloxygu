@@ -48,10 +48,16 @@ async function initDB() {
       await pool.query("INSERT INTO bloxygu_state (id, state) VALUES (1, $1::jsonb)", [JSON.stringify(dbCache)]);
     }
     dbCache.activeMines ||= {};
+    mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
+      ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
+    }]));
     console.log("Bloxygu database: PostgreSQL");
   } else {
     dbCache = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
     dbCache.activeMines ||= {};
+    mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
+      ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
+    }]));
     console.log("Bloxygu database: local JSON (development only)");
   }
 }
@@ -207,9 +213,7 @@ app.post("/api/game", auth, async (req, res) => {
 });
 
 // Mines is a server-managed round: the client never receives mine positions before cashout.
-const mineRounds = new Map(Object.entries(dbCache.activeMines || {}).map(([userId, round]) => [userId, {
-  ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
-}]));
+let mineRounds = new Map();
 app.post("/api/mines/start", auth, async (req, res) => {
   const bet = Math.floor(Number(req.body.bet));
   const mines = Math.floor(Number(req.body.mines));
