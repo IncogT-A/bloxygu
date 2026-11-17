@@ -24,7 +24,7 @@ if (!pool && !fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify(E
 function readDB() {
   if (dbCache) return dbCache;
   try { return JSON.parse(fs.readFileSync(DB_FILE, "utf8")); }
-  catch { return { users: [], transactions: [], requests: [], activeMines: {}, activeBlackjack: {}, verificationChallenges: [] }; }
+  catch { return { users: [], transactions: [], requests: [], activeMines: {}, activeBlackjack: {}, verificationChallenges: [], botLobbies: [] }; }
 }
 async function writeDB(db) {
   dbCache = db;
@@ -52,7 +52,6 @@ async function initDB() {
     dbCache.verificationChallenges ||= [];
     dbCache.activeBlackjack ||= {};
     dbCache.botLobbies ||= [];
-    dbCache.botLobbies ||= [];
     mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
       ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
     }]));
@@ -62,6 +61,7 @@ async function initDB() {
     dbCache.activeMines ||= {};
     dbCache.verificationChallenges ||= [];
     dbCache.activeBlackjack ||= {};
+    dbCache.botLobbies ||= [];
     mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
       ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
     }]));
@@ -307,7 +307,7 @@ app.delete("/api/admin/bots/:id", auth, adminAuth, async (req, res) => {
 app.post("/api/arcade/bots/:id/join", auth, async (req, res) => {
   const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.status === "waiting");
   if (!bot) return res.status(404).json({ error: "This demo bot is no longer waiting." });
-  if (bot.createdBy === req.user.id) return res.status(400).json({ error: "Use another account to test your own demo bot lobby." });
+  if ((req.db.botLobbies || []).some(b => b.playerId === req.user.id && b.status === "playing")) return res.status(409).json({ error: "Finish your current bot match first." });
   if (req.db.activeMines?.[req.user.id] || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your current game first." });
   bot.status = "playing"; bot.playerId = req.user.id; bot.playerName = req.user.displayName || req.user.username; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0;
   await writeDB(req.db); res.json({ match: publicBot(bot) });
@@ -514,6 +514,7 @@ app.post("/api/blackjack/stand", auth, async (req, res) => {
 });
 
 app.post("/api/requests", auth, async (req, res) => {
+  if (process.env.NODE_ENV === "production") return res.status(423).json({ error: "Deposits and withdrawals are locked during the demo launch." });
   const kind = String(req.body.kind || "");
   const details = String(req.body.details || "").trim().slice(0, 300);
   if (!["deposit", "withdrawal"].includes(kind) || !details) return res.status(400).json({ error: "Choose a request type and enter the details." });
