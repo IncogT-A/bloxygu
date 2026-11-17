@@ -47,6 +47,6 @@ GitHub Actions runs Node syntax checks on pushes and pull requests to \`main\`.
 - The pet catalogue depends on the public BIG Games API. Some categories, variant flags, and separate variant images may be absent or change upstream; the UI should not invent missing records.
 - Deposit/withdrawal forms only create pending requests. They do not connect to Roblox, move pets, or verify ownership.
 - Roblox ownership is verified by checking for a short-lived random phrase in the public Roblox profile description. Roblox API availability and profile visibility can affect verification.
-- Before opening this publicly, configure a persistent data disk, a strong session secret, HTTPS, backups, and operational monitoring. The JSON file store is suitable for local development only, not a high-concurrency production service.
+- Before opening this publicly, configure Neon backups, a strong session secret, HTTPS, and operational monitoring. Production password login and unverified profile linking are disabled; Roblox bio verification is required.
 
 Bloxygu is an independent fan project and is not affiliated with Roblox or BIG Games.
