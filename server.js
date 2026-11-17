@@ -186,6 +186,11 @@ app.post("/api/mines/start", auth, (req, res) => {
   writeDB(req.db);
   res.json({ user: cleanUser(req.user), safePicks: 0, multiplier: 1, active: true });
 });
+app.get("/api/mines/state", auth, (req, res) => {
+  const round = mineRounds.get(req.user.id);
+  if (!round) return res.json({ active: false });
+  res.json({ active: true, bet: round.bet, mines: round.mines, safePicks: round.picks.size, picks: Array.from(round.picks), multiplier: Number(round.multiplier.toFixed(3)) });
+});
 app.post("/api/mines/pick", auth, (req, res) => {
   const round = mineRounds.get(req.user.id);
   if (!round) return res.status(400).json({ error: "Start a Mines round first." });
