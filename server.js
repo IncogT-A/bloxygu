@@ -152,7 +152,6 @@ app.post("/api/roblox/verify/start", limitAuth, async (req, res) => {
     if (!profile || profile.id !== userId) return res.status(409).json({ error: "That Roblox account changed. Look it up again." });
     const db = readDB();
     const existing = db.users.find(u => String(u.robloxId || "") === userId);
-    if (existing) return res.status(409).json({ error: "That Roblox account is already linked. Log in with its verification flow." });
     db.verificationChallenges = (db.verificationChallenges || []).filter(c => c.expiresAt > Date.now() && c.userId !== userId);
     const phrase = Array.from({ length: 5 }, () => challengeWords[crypto.randomInt(challengeWords.length)]).join(" ");
     const challenge = { id: crypto.randomUUID(), userId, username: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl, phraseHash: crypto.createHash("sha256").update(phrase).digest("hex"), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 };
