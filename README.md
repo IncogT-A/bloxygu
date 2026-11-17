@@ -13,7 +13,7 @@ A fan-made Pet Simulator 99 community hub with a live pet catalogue, player acco
 - Pet index loaded from the public BIG Games API, with search and type/variant filters when source metadata is available.
 - Leaderboard, recent wins feed, and per-account transaction history.
 - Admin console protected by an explicit allowlist of verified Roblox user IDs.
-- Admin-managed demo bot lobbies for Color Dice and Coinflip; opponents wait for a player, play five-round matches, and are clearly labelled as demo bots.
+- Admin-managed demo bot lobbies. Color Dice uses two colours per player, four dice per round, tie re-rolls, round history, animated rolls, and a first-to-two match with demo-credit wagers. Opponents wait for a player and are clearly labelled as demo bots.
 - Manual request inbox for historical requests; new deposit/withdrawal submissions are locked in production.
 
 ## Local setup
@@ -48,7 +48,7 @@ GitHub Actions runs Node syntax checks on pushes and pull requests to \`main\`.
 - Pet values are intentionally not included yet.
 - The pet catalogue depends on the public BIG Games API. Some categories, variant flags, and separate variant images may be absent or change upstream; the UI should not invent missing records.
 - Deposits and withdrawals are locked in production. The admin request-status controls only update labels on any historical/manual records; they do not connect to Roblox, move pets, or verify ownership.
-- Demo bot lobbies are simulated opponents for Color Dice and Coinflip only. They do not log into Roblox, control a Roblox account, or place demo-credit wagers. They wait for a signed-in user and play a short head-to-head demo match.
+- Demo bot lobbies are simulated opponents; they do not log into Roblox or control a Roblox account. Color Dice demo matches use two selected colours per side, four server-rolled dice per round, tie re-rolls, and first-to-two scoring. Demo-credit wagers are debited and paid/refunded by the server; they have no cash or item value.
 - Roblox ownership is verified by checking for a short-lived random phrase in the public Roblox profile description. Roblox API availability and profile visibility can affect verification.
 - Before opening this publicly, configure Neon backups, a strong session secret, HTTPS, and operational monitoring. Production password login and unverified profile linking are disabled; Roblox bio verification is required.
 
