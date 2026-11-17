@@ -142,7 +142,7 @@ async function loadLeaderboard() {
 const gameInfo = {
   dice: ["Color Dice Duel", "Pick a color. Match the roll and win 3× your bet."],
   coinflip: ["Coinflip", "Call heads or tails. Correct calls pay 2×."],
-  mines: ["Mines", "A quick demo round: the server checks a randomly selected tile."],
+  mines: ["Mines", "Pick safe tiles, avoid hidden mines, and cash out before you hit one."],
   upgrader: ["Upgrader", "Choose a multiplier. Higher targets have lower win chances."]
 };
 function setGame(game) {
