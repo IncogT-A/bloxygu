@@ -274,7 +274,6 @@ async function playBlackjackAction(action) {
       $("#playGame").textContent = "Play again";
     } else {
       $("#gameResult").textContent = "Your total: " + data.round.playerValue + " · Hit or stand.";
-      bindBlackjackButtons();
     }
   } catch (e) { toast(e.message); }
 }
