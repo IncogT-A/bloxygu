@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let me = null, robloxCandidate = null, robloxChallengeId = null, currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, activeBlackjack = false, petLimit = 60;
+let me = null, robloxCandidate = null, robloxChallengeId = null, currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, activeBlackjack = false, petLimit = 60, botMatch = null;
 
 function toast(message) {
   const el = $("#toast"); el.textContent = message; el.classList.add("show");
@@ -22,6 +22,7 @@ function updateUser(user) {
   }
   const accountLabel = document.createElement("span"); accountLabel.textContent = me ? (me.displayName || me.username) : "Log in";
   $("#accountButton").append(accountLabel);
+  $("#adminNav")?.classList.toggle("hidden", !me?.isAdmin);
 }
 function showPage(page) {
   document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
@@ -29,6 +30,8 @@ function showPage(page) {
   document.querySelectorAll(".nav-link").forEach(b => b.classList.toggle("active", b.dataset.page === page));
   if (page === "pets") loadPets();
   if (page === "leaderboard") loadLeaderboard();
+  if (page === "games") loadDemoBots();
+  if (page === "admin") loadAdminOverview();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 document.querySelectorAll("[data-page]").forEach(b => b.addEventListener("click", () => showPage(b.dataset.page)));
@@ -97,6 +100,74 @@ $("#robloxVerify").addEventListener("click", async () => {
 });
 $("#robloxRestart").addEventListener("click", () => { robloxCandidate = null; robloxChallengeId = null; $("#robloxStep3").classList.add("hidden"); $("#robloxStep1").classList.remove("hidden"); $("#authError").textContent = ""; });
 
+
+async function loadDemoBots() {
+  const host = $("#botArena");
+  if (!host) return;
+  try {
+    const data = await api("/api/arcade/bots");
+    if (!data.bots.length) { host.innerHTML = '<div class="empty-state"><span>🤖</span><b>No bots waiting right now.</b><small>Check back soon or ask an admin to launch one.</small></div>'; return; }
+    host.innerHTML = data.bots.map(bot => '<article class="bot-card"><div class="bot-avatar">🤖</div><div class="bot-meta"><b>' + escapeHtml(bot.name) + ' <span class="demo-tag">DEMO BOT</span></b><small>' + (bot.game === "dice" ? "Color Dice Duel" : "Coinflip") + ' · ' + escapeHtml(bot.style) + ' playstyle · Waiting for player</small></div><button class="button button-primary bot-join" data-bot-join="' + escapeAttr(bot.id) + '">Join match</button></article>').join("");
+    host.querySelectorAll("[data-bot-join]").forEach(button => button.addEventListener("click", () => joinDemoBot(button.dataset.botJoin)));
+  } catch (e) { host.textContent = e.message; }
+}
+async function joinDemoBot(id) {
+  if (!me) return openAuth("login");
+  try {
+    const data = await api("/api/arcade/bots/" + encodeURIComponent(id) + "/join", { method: "POST", body: "{}" });
+    botMatch = data.match; renderBotMatch();
+  } catch (e) { toast(e.message); loadDemoBots(); }
+}
+function renderBotMatch(message = "Match ready. Choose your move.") {
+  const host = $("#botArena");
+  if (!botMatch) return loadDemoBots();
+  const choices = botMatch.game === "dice" ? ["red","blue","green","purple"] : ["heads","tails"];
+  host.innerHTML = '<div class="bot-match"><div class="bot-match-head"><div class="bot-avatar">🤖</div><div><b>' + escapeHtml(botMatch.name) + '</b><small>DEMO BOT · ' + (botMatch.game === "dice" ? "COLOR DICE" : "COINFLIP") + '</small></div><span class="match-score">' + botMatch.playerScore + ' : ' + botMatch.botScore + '</span></div><div class="match-score-label"><span>YOU</span><span>BOT</span></div><div class="match-round">ROUND ' + (botMatch.rounds + 1) + ' / 5</div><p id="botRoundMessage" class="bot-round-message">' + escapeHtml(message) + '</p>' + (botMatch.status === "completed" ? '<div class="bot-match-result">MATCH COMPLETE · ' + (botMatch.playerScore > botMatch.botScore ? "YOU WIN" : botMatch.playerScore < botMatch.botScore ? "BOT WINS" : "DRAW") + '</div>' : '<div class="bot-choice-grid">' + choices.map(c => '<button class="choice" data-bot-choice="' + c + '">' + (c[0].toUpperCase() + c.slice(1)) + '</button>').join("") + '</div>') + '<button id="leaveBotMatch" class="button button-soft full">' + (botMatch.status === "completed" ? "Back to bot lobby" : "Leave match") + '</button></div>';
+  host.querySelectorAll("[data-bot-choice]").forEach(button => button.addEventListener("click", () => playBotRound(button.dataset.botChoice)));
+  $("#leaveBotMatch").addEventListener("click", async () => {
+    try { await api("/api/arcade/bots/" + encodeURIComponent(botMatch.id) + "/leave", { method: "POST", body: "{}" }); } catch {}
+    botMatch = null; loadDemoBots();
+  });
+}
+async function playBotRound(choice) {
+  try {
+    const data = await api("/api/arcade/bots/" + encodeURIComponent(botMatch.id) + "/round", { method: "POST", body: JSON.stringify({ choice }) });
+    botMatch = data.match;
+    const result = data.outcome === "player" ? "Round won! Your call matched the result; bot missed." : data.outcome === "bot" ? "Bot takes the round. It called the result correctly." : "Draw round — both calls matched or both missed.";
+    const detail = "Result: " + data.landed + " · Your call: " + data.choice + " · Bot call: " + data.botChoice;
+    renderBotMatch(result + " " + detail);
+    if (botMatch.status === "completed") toast(data.winner === "player" ? "You won the demo match!" : data.winner === "bot" ? "The demo bot won this match." : "Demo match ended in a draw.");
+  } catch (e) { toast(e.message); }
+}
+async function loadAdminOverview() {
+  if (!me?.isAdmin) { toast("Admin access is restricted."); showPage("home"); return; }
+  try {
+    const data = await api("/api/admin/overview");
+    $("#adminStats").innerHTML = [['Players',data.stats.users],['Demo credits',Number(data.stats.demoCredits).toLocaleString()],['Pending requests',data.stats.pendingRequests],['Bot lobbies',data.stats.botLobbies]].map(x => '<div class="admin-stat"><small>' + x[0] + '</small><b>' + x[1] + '</b></div>').join("");
+    $("#adminBots").innerHTML = data.bots.length ? data.bots.map(bot => '<div class="admin-row"><span><b>' + escapeHtml(bot.name) + '</b><small>' + escapeHtml(bot.game) + ' · ' + escapeHtml(bot.status) + '</small></span><span class="admin-actions"><button class="text-button" data-bot-action="' + (bot.status === "stopped" ? "start" : "stop") + '" data-bot-id="' + escapeAttr(bot.id) + '">' + (bot.status === "stopped" ? "Start" : "Stop") + '</button><button class="text-button danger-text" data-bot-action="delete" data-bot-id="' + escapeAttr(bot.id) + '">Delete</button></span></div>').join("") : '<p class="muted">No bots created yet.</p>';
+    $("#adminRequests").innerHTML = data.requests.length ? data.requests.map(item => '<div class="admin-row"><span><b>' + escapeHtml(item.username) + ' · ' + escapeHtml(item.kind) + '</b><small>' + escapeHtml(item.details) + ' · ' + escapeHtml(item.status) + '</small></span><span class="admin-actions"><select class="field admin-status" data-request-id="' + escapeAttr(item.id) + '"><option ' + (item.status==="pending"?"selected":"") + '>pending</option><option ' + (item.status==="approved"?"selected":"") + '>approved</option><option ' + (item.status==="rejected"?"selected":"") + '>rejected</option><option ' + (item.status==="completed"?"selected":"") + '>completed</option></select></span></div>').join("") : '<p class="muted">No manual requests.</p>';
+    $("#adminUsers").innerHTML = data.users.length ? data.users.map(u => '<div class="admin-row"><span><b>' + escapeHtml(u.username) + '</b><small>' + (u.roblox ? '@' + escapeHtml(u.roblox) : 'Roblox not linked') + ' · ' + new Date(u.createdAt).toLocaleDateString() + '</small></span><b>' + Number(u.credits).toLocaleString() + ' demo</b></div>').join("") : '<p class="muted">No accounts yet.</p>';
+    $("#adminBots").querySelectorAll("[data-bot-action]").forEach(button => button.addEventListener("click", async () => {
+      const action = button.dataset.botAction, id = button.dataset.botId;
+      try {
+        if (action === "delete") await api("/api/admin/bots/" + encodeURIComponent(id), { method: "DELETE" });
+        else await api("/api/admin/bots/" + encodeURIComponent(id) + "/" + action, { method: "POST", body: "{}" });
+        loadAdminOverview(); loadDemoBots();
+      } catch (e) { toast(e.message); }
+    }));
+    $("#adminRequests").querySelectorAll("[data-request-id]").forEach(select => select.addEventListener("change", async () => {
+      try { await api("/api/admin/requests/" + encodeURIComponent(select.dataset.requestId) + "/status", { method: "POST", body: JSON.stringify({ status: select.value }) }); toast("Request status updated. No item was transferred."); }
+      catch (e) { toast(e.message); }
+    }));
+  } catch (e) { $("#adminNotice").textContent = e.message; }
+}
+$("#createBot")?.addEventListener("click", async () => {
+  try {
+    await api("/api/admin/bots", { method: "POST", body: JSON.stringify({ name: $("#botName").value, game: $("#botGame").value, style: $("#botStyle").value }) });
+    toast("Demo bot is waiting in the public arena."); loadAdminOverview(); loadDemoBots();
+  } catch (e) { toast(e.message); }
+});
+$("#refreshBots")?.addEventListener("click", loadDemoBots);
 async function loadPets() {
   if (petData.length) return renderPets();
   $("#petStatus").textContent = "Loading live pet catalog...";
