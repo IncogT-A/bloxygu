@@ -2,6 +2,7 @@ const express = require("express");
 const session = require("express-session");
 const bcrypt = require("bcryptjs");
 const FileStore = require("session-file-store")(session);
+const PgSession = require("connect-pg-simple")(session);
 const fs = require("fs");
 const path = require("path");
 
@@ -86,7 +87,7 @@ app.use(express.json({ limit: "1mb" }));
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) throw new Error("SESSION_SECRET must be configured in production.");
 app.set("trust proxy", 1);
 app.use(session({
-  store: new FileStore({ path: path.join(DATA_DIR, "sessions"), ttl: 7 * 24 * 60 * 60, retries: 1 }),
+  store: pool ? new PgSession({ pool, tableName: "bloxygu_sessions", createTableIfMissing: true }) : new FileStore({ path: path.join(DATA_DIR, "sessions"), ttl: 7 * 24 * 60 * 60, retries: 1 }),
   name: "bloxygu.sid",
   secret: process.env.SESSION_SECRET || "bloxygu-local-development-secret-only",
   resave: false,
