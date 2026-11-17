@@ -169,6 +169,12 @@ async function pickMineTile(tile, button) {
     }
   } catch (e) { button.disabled = false; toast(e.message); }
 }
+async function loadRecentWins() {
+  try {
+    const data = await api("/api/recent-wins");
+    $("#recentWins").innerHTML = data.wins.length ? data.wins.map(w => '<div class="recent-win"><span class="recent-game">' + escapeHtml(w.game) + '<small>' + escapeHtml(w.username) + ' · ' + new Date(w.createdAt).toLocaleString() + '</small></span><b>+' + Number(w.amount).toLocaleString() + ' <small>demo credits</small></b></div>').join("") : '<p class="muted">No wins yet. Be the first to play.</p>';
+  } catch (e) { $("#recentWins").textContent = e.message; }
+}
 async function loadLeaderboard() {
   try {
     const data = await api("/api/leaderboard");
@@ -285,6 +291,7 @@ async function playBlackjackAction(action) {
 async function init() {
   try { const data = await api("/api/me"); updateUser(data.user); } catch { updateUser(null); }
   setGame("dice");
+  loadRecentWins();
   if (me) {
     try {
       const blackjackState = await api("/api/blackjack/state");
