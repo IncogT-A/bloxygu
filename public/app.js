@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let me = null, robloxCandidate = null, robloxChallengeId = null, currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, activeBlackjack = false, petLimit = 60, botMatch = null;
+let me = null, robloxCandidate = null, robloxChallengeId = null, currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, activeBlackjack = false, petLimit = 60, botMatch = null, duelColors = ["orange","yellow"];
 
 function toast(message) {
   const el = $("#toast"); el.textContent = message; el.classList.add("show");
@@ -101,43 +101,75 @@ $("#robloxVerify").addEventListener("click", async () => {
 $("#robloxRestart").addEventListener("click", () => { robloxCandidate = null; robloxChallengeId = null; $("#robloxStep3").classList.add("hidden"); $("#robloxStep1").classList.remove("hidden"); $("#authError").textContent = ""; });
 
 
+
+const DICE_COLORS = ["orange","yellow","blue","purple"];
+const colorLabel = c => c[0].toUpperCase()+c.slice(1);
+function renderDuelColorPicker() {
+  return '<div class="duel-picker"><div><b>Choose your two colours</b><small>Pick exactly two. Your opponent gets the other two.</small></div><div class="duel-color-options">' + DICE_COLORS.map(c => '<button class="duel-color ' + (duelColors.includes(c) ? "picked " : "") + c + '" data-duel-color="' + c + '"><i></i>' + colorLabel(c) + (duelColors.includes(c) ? ' ✓' : '') + '</button>').join("") + '</div><label class="control-label">Demo wager</label><input id="duelBet" class="field" type="number" min="10" max="5000" value="100"></div>';
+}
+function bindDuelColorPicker(host) {
+  host.querySelectorAll("[data-duel-color]").forEach(button => button.addEventListener("click", () => {
+    const color = button.dataset.duelColor;
+    if (duelColors.includes(color)) duelColors = duelColors.filter(c => c !== color);
+    else if (duelColors.length < 2) duelColors.push(color);
+    else { toast("You can select exactly two colours."); return; }
+    loadDemoBots();
+  }));
+}
 async function loadDemoBots() {
   const host = $("#botArena");
   if (!host) return;
+  if (botMatch) return renderBotMatch();
   try {
     const data = await api("/api/arcade/bots");
-    if (!data.bots.length) { host.innerHTML = '<div class="empty-state"><span>🤖</span><b>No bots waiting right now.</b><small>Check back soon or ask an admin to launch one.</small></div>'; return; }
-    host.innerHTML = data.bots.map(bot => '<article class="bot-card"><div class="bot-avatar">🤖</div><div class="bot-meta"><b>' + escapeHtml(bot.name) + ' <span class="demo-tag">DEMO BOT</span></b><small>' + (bot.game === "dice" ? "Color Dice Duel" : "Coinflip") + ' · ' + escapeHtml(bot.style) + ' playstyle · Waiting for player</small></div><button class="button button-primary bot-join" data-bot-join="' + escapeAttr(bot.id) + '">Join match</button></article>').join("");
+    const diceBots = data.bots.filter(b => b.game === "dice");
+    const otherBots = data.bots.filter(b => b.game !== "dice");
+    host.innerHTML = renderDuelColorPicker() + '<div class="bot-lobby-heading"><b>Waiting opponents</b><span>' + diceBots.length + ' available</span></div>' + (diceBots.length ? diceBots.map(bot => '<article class="bot-card duel-lobby-card"><div class="bot-avatar">🐱</div><div class="bot-meta"><b>' + escapeHtml(bot.name) + ' <span class="demo-tag">DEMO BOT</span></b><small>Color Dice · First to 2 · Waiting for player</small><div class="mini-color-row">' + DICE_COLORS.map(c => '<i class="mini-color ' + c + '"></i>').join("") + '</div></div><button class="button button-primary bot-join" data-bot-join="' + escapeAttr(bot.id) + '">Join duel</button></article>').join("") : '<div class="empty-state"><span>🎲</span><b>No opponents waiting.</b><small>An admin can launch a demo opponent from the control room.</small></div>') + (otherBots.length ? '<div class="small-note">Other practice bots: ' + otherBots.map(b=>escapeHtml(b.name)).join(", ") + '</div>' : '');
+    bindDuelColorPicker(host);
     host.querySelectorAll("[data-bot-join]").forEach(button => button.addEventListener("click", () => joinDemoBot(button.dataset.botJoin)));
   } catch (e) { host.textContent = e.message; }
 }
 async function joinDemoBot(id) {
   if (!me) return openAuth("login");
+  if (duelColors.length !== 2) return toast("Choose exactly two colours first.");
+  const bet = Number($("#duelBet")?.value || 100);
   try {
-    const data = await api("/api/arcade/bots/" + encodeURIComponent(id) + "/join", { method: "POST", body: "{}" });
-    botMatch = data.match; renderBotMatch();
+    const data = await api("/api/arcade/bots/" + encodeURIComponent(id) + "/join", { method: "POST", body: JSON.stringify({ colors: duelColors, bet }) });
+    updateUser(data.user); botMatch = data.match; renderBotMatch("The duel is ready. Roll four dice!");
   } catch (e) { toast(e.message); loadDemoBots(); }
 }
-function renderBotMatch(message = "Match ready. Choose your move.") {
+function colorPet(c, label) {
+  const face = {orange:"🐱",yellow:"🐱",blue:"🐱",purple:"🐱"}[c] || "🐾";
+  return '<span class="pet-die ' + c + '" title="' + label + '"><span>' + face + '</span></span>';
+}
+function renderBotMatch(message = "Ready to roll?") {
   const host = $("#botArena");
   if (!botMatch) return loadDemoBots();
-  const choices = botMatch.game === "dice" ? ["red","blue","green","purple"] : ["heads","tails"];
-  host.innerHTML = '<div class="bot-match"><div class="bot-match-head"><div class="bot-avatar">🤖</div><div><b>' + escapeHtml(botMatch.name) + '</b><small>DEMO BOT · ' + (botMatch.game === "dice" ? "COLOR DICE" : "COINFLIP") + '</small></div><span class="match-score">' + botMatch.playerScore + ' : ' + botMatch.botScore + '</span></div><div class="match-score-label"><span>YOU</span><span>BOT</span></div><div class="match-round">ROUND ' + (botMatch.rounds + 1) + ' / 5</div><p id="botRoundMessage" class="bot-round-message">' + escapeHtml(message) + '</p>' + (botMatch.status === "completed" ? '<div class="bot-match-result">MATCH COMPLETE · ' + (botMatch.playerScore > botMatch.botScore ? "YOU WIN" : botMatch.playerScore < botMatch.botScore ? "BOT WINS" : "DRAW") + '</div>' : '<div class="bot-choice-grid">' + choices.map(c => '<button class="choice" data-bot-choice="' + c + '">' + (c[0].toUpperCase() + c.slice(1)) + '</button>').join("") + '</div>') + '<button id="leaveBotMatch" class="button button-soft full">' + (botMatch.status === "completed" ? "Back to bot lobby" : "Leave match") + '</button></div>';
-  host.querySelectorAll("[data-bot-choice]").forEach(button => button.addEventListener("click", () => playBotRound(button.dataset.botChoice)));
+  const history = botMatch.history || [];
+  const done = botMatch.status === "completed";
+  const winnerText = botMatch.winner === "player" ? "YOU WIN" : botMatch.winner === "bot" ? "BOT WINS" : "DRAW";
+  host.innerHTML = '<div class="duel-match"><div class="duel-brand"><span>🐱</span><b>BLOXYGU</b><em>COLOR DICE</em><button id="leaveBotMatch" aria-label="Close duel">×</button></div><div class="duel-first">FIRST TO 2 <span>·</span> ROUND ' + Math.max(1,botMatch.rounds) + '</div><div class="duel-players"><div class="duel-player you"><div class="duel-pet-stack">' + botMatch.playerColors.map(c=>colorPet(c,"Your colour")).join("") + '</div><span class="player-tag">PLAYER 1</span><b>' + escapeHtml(me?.displayName || me?.username || "You") + '</b><div class="duel-swatches">' + botMatch.playerColors.map(c=>'<i class="mini-color '+c+'"></i>').join("") + '</div><strong>◆ ' + Number(botMatch.bet||0).toLocaleString() + '</strong></div><div class="duel-score"><small>YOU <span>VS</span> BOT</small><b>' + botMatch.playerScore + '<i>:</i>' + botMatch.botScore + '</b><small>FIRST TO 2</small></div><div class="duel-player opponent"><div class="duel-pet-stack">' + botMatch.botColors.map(c=>colorPet(c,"Bot colour")).join("") + '</div><span class="player-tag">PLAYER 2 · BOT</span><b>' + escapeHtml(botMatch.name) + '</b><div class="duel-swatches">' + botMatch.botColors.map(c=>'<i class="mini-color '+c+'"></i>').join("") + '</div><strong>DEMO OPPONENT</strong></div></div><div class="dice-stage"><div class="dice-stage-label">FOUR DICE <span>·</span> TIES RE-ROLL</div><div id="duelDice" class="duel-dice">' + (history[0]?.dice || ["?","?","?","?"]).map(c=>'<div class="dice-cube '+(DICE_COLORS.includes(c)?c:"")+'"><span>'+(DICE_COLORS.includes(c)?"🐱":"?")+'</span></div>').join("") + '</div><div id="duelRoundMessage" class="duel-round-message">' + escapeHtml(message) + '</div></div>' + (done ? '<div class="duel-victory ' + botMatch.winner + '"><b>' + winnerText + '</b><span>' + (botMatch.winner === "player" ? "◆ " + Number(botMatch.payout||0).toLocaleString() + " demo credits returned" : botMatch.winner === "draw" ? "Your demo wager was refunded" : "Better luck on the next duel") + '</span></div>' : '<button id="rollDuel" class="button button-primary full duel-roll">🎲 Roll four dice</button>') + '<div class="duel-history"><div class="duel-history-title">ROUND HISTORY <span>' + history.length + ' ROUNDS</span></div>' + (history.length ? history.map(r=>'<div class="duel-history-row"><b>R'+r.number+'</b><span class="history-dice">'+r.dice.map(c=>'<i class="mini-color '+c+'"></i>').join("")+'</span><span>'+(r.outcome==="player"?"YOU WON":r.outcome==="bot"?"BOT WON":"DRAW")+'</span><strong>'+r.playerHits+' : '+r.botHits+'</strong></div>').join("") : '<p class="small-note">Your first roll is waiting.</p>') + '</div><div class="duel-pot-note">DEMO CREDITS ONLY · NO REAL ITEMS · FIRST TO 2 ROUND WINS</div></div>';
   $("#leaveBotMatch").addEventListener("click", async () => {
-    try { await api("/api/arcade/bots/" + encodeURIComponent(botMatch.id) + "/leave", { method: "POST", body: "{}" }); } catch {}
+    try { const data=await api("/api/arcade/bots/" + encodeURIComponent(botMatch.id) + "/leave", { method: "POST", body: "{}" }); if(data.user) updateUser(data.user); } catch {}
     botMatch = null; loadDemoBots();
   });
+  $("#rollDuel")?.addEventListener("click", playBotRound);
 }
-async function playBotRound(choice) {
-  try {
-    const data = await api("/api/arcade/bots/" + encodeURIComponent(botMatch.id) + "/round", { method: "POST", body: JSON.stringify({ choice }) });
-    botMatch = data.match;
-    const result = data.outcome === "player" ? "Round won! Your call matched the result; bot missed." : data.outcome === "bot" ? "Bot takes the round. It called the result correctly." : "Draw round — both calls matched or both missed.";
-    const detail = "Result: " + data.landed + " · Your call: " + data.choice + " · Bot call: " + data.botChoice;
-    renderBotMatch(result + " " + detail);
-    if (botMatch.status === "completed") toast(data.winner === "player" ? "You won the demo match!" : data.winner === "bot" ? "The demo bot won this match." : "Demo match ended in a draw.");
-  } catch (e) { toast(e.message); }
+const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
+async function playBotRound() {
+  if (!botMatch) return;
+  const button=$("#rollDuel"); if(button) {button.disabled=true;button.textContent="Rolling...";}
+  const host=$("#duelDice");
+  if(host){host.innerHTML=Array.from({length:4},()=>'<div class="dice-cube rolling"><span>🐱</span></div>').join("");}
+  let data;
+  try { data=await api("/api/arcade/bots/" + encodeURIComponent(botMatch.id) + "/round", { method: "POST", body: "{}" }); }
+  catch(e){toast(e.message);if(button){button.disabled=false;button.textContent="🎲 Roll four dice";}return;}
+  await wait(1350);
+  botMatch=data.match; if(data.user) updateUser(data.user);
+  const outcome=data.round.outcome;
+  const note=outcome==="player"?"ROUND WON — more of your colours!":outcome==="bot"?"BOT TAKES THE ROUND": "ROUND DRAW";
+  renderBotMatch(note + " · " + data.round.playerHits + " vs " + data.round.botHits + " matching dice");
+  if(data.winner) toast(data.winner==="player"?"DUEL WON!":data.winner==="bot"?"Bot won the duel.":"Draw — wager refunded.");
 }
 async function loadAdminOverview() {
   if (!me?.isAdmin) { toast("Admin access is restricted."); showPage("home"); return; }
