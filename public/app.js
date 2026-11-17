@@ -42,14 +42,6 @@ $("#accountButton").addEventListener("click", () => {
   $("#profileModal").classList.remove("hidden");
   loadAccountActivity();
 });
-$("#authSwitch").addEventListener("click", () => openAuth(authMode === "login" ? "register" : "login"));
-$("#authForm").addEventListener("submit", async e => {
-  e.preventDefault(); $("#authError").textContent = "";
-  try {
-    const data = await api("/api/" + (authMode === "login" ? "login" : "register"), { method: "POST", body: JSON.stringify({ username: $("#authUsername").value, password: $("#authPassword").value }) });
-    updateUser(data.user); $("#authModal").classList.add("hidden"); $("#authForm").reset(); toast("Welcome to Bloxygu, " + me.username + "!");
-  } catch (err) { $("#authError").textContent = err.message; }
-});
 $("#logout").addEventListener("click", async () => { await api("/api/logout", { method: "POST", body: "{}" }); updateUser(null); $("#profileModal").classList.add("hidden"); toast("Logged out."); });
 $("#dailyClaim").addEventListener("click", async () => {
   try { const data = await api("/api/daily", { method: "POST", body: "{}" }); updateUser(data.user); $("#profileBalance").textContent = me.credits.toLocaleString() + " demo credits"; toast("Daily bonus claimed: +1,000!"); }
