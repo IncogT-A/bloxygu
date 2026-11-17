@@ -319,7 +319,7 @@ app.post("/api/arcade/bots/:id/round", auth, async (req, res) => {
   const choice = String(req.body.choice || "");
   if (!allowed.includes(choice)) return res.status(400).json({ error: "Choose a valid move." });
   const landed = bot.game === "dice" ? ["red","blue","green","purple"][crypto.randomInt(4)] : (crypto.randomInt(2) ? "heads" : "tails");
-  const botChoice = allowed[crypto.randomInt(allowed.length)];
+  const botChoice = bot.style === "calm" ? allowed[bot.rounds % allowed.length] : allowed[crypto.randomInt(allowed.length)];
   const playerCorrect = choice === landed, botCorrect = botChoice === landed;
   const outcome = playerCorrect && !botCorrect ? "player" : botCorrect && !playerCorrect ? "bot" : "draw";
   if (outcome === "player") bot.playerScore++;
