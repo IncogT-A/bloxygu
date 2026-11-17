@@ -13,7 +13,7 @@ const { Pool } = require("pg");
 const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 })
   : null;
-const EMPTY_DB = { users: [], transactions: [], requests: [], activeMines: {}, verificationChallenges: [] };
+const EMPTY_DB = { users: [], transactions: [], requests: [], activeMines: {}, activeBlackjack: {}, verificationChallenges: [] };
 let dbCache = null;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -49,6 +49,7 @@ async function initDB() {
     }
     dbCache.activeMines ||= {};
     dbCache.verificationChallenges ||= [];
+    dbCache.activeBlackjack ||= {};
     mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
       ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
     }]));
@@ -57,6 +58,7 @@ async function initDB() {
     dbCache = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
     dbCache.activeMines ||= {};
     dbCache.verificationChallenges ||= [];
+    dbCache.activeBlackjack ||= {};
     mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
       ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
     }]));
@@ -348,6 +350,67 @@ app.post("/api/mines/cashout", auth, async (req, res) => {
   transaction(req.db, req.user, "mines-cashout", payout, "Cashed out Mines round");
   await writeDB(req.db);
   res.json({ payout, multiplier: Number(round.multiplier.toFixed(3)), user: cleanUser(req.user), ended: true });
+});
+
+
+function blackjackDeck() {
+  const suits = ["♠","♥","♦","♣"], ranks = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+  const cards = suits.flatMap(suit => ranks.map(rank => ({ rank, suit, value: rank === "A" ? 11 : (["J","Q","K"].includes(rank) ? 10 : Number(rank)) })));
+  for (let i = cards.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [cards[i], cards[j]] = [cards[j], cards[i]]; }
+  return cards;
+}
+function blackjackValue(cards) {
+  let total = cards.reduce((sum, card) => sum + card.value, 0), aces = cards.filter(card => card.rank === "A").length;
+  while (total > 21 && aces > 0) { total -= 10; aces--; }
+  return total;
+}
+function publicBlackjack(round) {
+  return { player: round.player, dealer: round.finished ? round.dealer : [round.dealer[0], { hidden: true }], playerValue: blackjackValue(round.player), dealerValue: round.finished ? blackjackValue(round.dealer) : null, finished: round.finished, outcome: round.outcome || null };
+}
+async function finishBlackjack(req, round, outcome, payout) {
+  round.finished = true; round.outcome = outcome;
+  req.user.credits += payout;
+  delete req.db.activeBlackjack[req.user.id];
+  transaction(req.db, req.user, "blackjack", payout, "Blackjack " + outcome);
+  await writeDB(req.db);
+  return { round: publicBlackjack(round), payout, user: cleanUser(req.user) };
+}
+app.post("/api/blackjack/start", auth, async (req, res) => {
+  const bet = Math.floor(Number(req.body.bet));
+  if (!Number.isInteger(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
+  if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
+  if (req.db.activeBlackjack[req.user.id]) return res.status(409).json({ error: "Finish your current Blackjack hand first." });
+  const deck = blackjackDeck();
+  const round = { bet, deck, player: [deck.pop(), deck.pop()], dealer: [deck.pop(), deck.pop()], finished: false, outcome: null };
+  req.user.credits -= bet;
+  transaction(req.db, req.user, "blackjack-start", -bet, "Started Blackjack hand");
+  const natural = blackjackValue(round.player) === 21;
+  if (natural) {
+    const dealerNatural = blackjackValue(round.dealer) === 21;
+    const result = await finishBlackjack(req, round, dealerNatural ? "push" : "blackjack", dealerNatural ? bet : Math.floor(bet * 2.5));
+    return res.json({ ...result, natural: true });
+  }
+  req.db.activeBlackjack[req.user.id] = round;
+  await writeDB(req.db);
+  res.json({ round: publicBlackjack(round), user: cleanUser(req.user) });
+});
+app.post("/api/blackjack/hit", auth, async (req, res) => {
+  const round = req.db.activeBlackjack[req.user.id];
+  if (!round || round.finished) return res.status(400).json({ error: "No active Blackjack hand." });
+  round.player.push(round.deck.pop());
+  const total = blackjackValue(round.player);
+  if (total > 21) return res.json(await finishBlackjack(req, round, "bust", 0));
+  await writeDB(req.db);
+  res.json({ round: publicBlackjack(round), user: cleanUser(req.user) });
+});
+app.post("/api/blackjack/stand", auth, async (req, res) => {
+  const round = req.db.activeBlackjack[req.user.id];
+  if (!round || round.finished) return res.status(400).json({ error: "No active Blackjack hand." });
+  while (blackjackValue(round.dealer) < 17) round.dealer.push(round.deck.pop());
+  const player = blackjackValue(round.player), dealer = blackjackValue(round.dealer);
+  const outcome = dealer > 21 || player > dealer ? "win" : player === dealer ? "push" : "loss";
+  const payout = outcome === "win" ? round.bet * 2 : outcome === "push" ? round.bet : 0;
+  res.json(await finishBlackjack(req, round, outcome, payout));
 });
 
 app.post("/api/requests", auth, async (req, res) => {
