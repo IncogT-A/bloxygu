@@ -39,3 +39,14 @@ jobs:
             -d '{"username":"ciuser123","password":"testpassword123"}' \
             http://127.0.0.1:3333/api/register
           curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/me
+          curl --fail http://127.0.0.1:3333/api/leaderboard
+          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/transactions
+          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" -H "Content-Type: application/json" \
+            -d '{"game":"dice","bet":100,"choice":"red"}' \
+            http://127.0.0.1:3333/api/game
+          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" -H "Content-Type: application/json" \
+            -d '{"bet":100}' http://127.0.0.1:3333/api/blackjack/start
+          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/blackjack/state
+          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" -H "Content-Type: application/json" \
+            -d '{"bet":100,"mines":3}' http://127.0.0.1:3333/api/mines/start
+          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/mines/state
