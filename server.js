@@ -117,7 +117,6 @@ app.get("/api/me", (req, res) => {
 
 
 const crypto = require("crypto");
-const pendingVerificationPhrases = new Map();
 const challengeWords = ["amber","blox","comet","daisy","dragon","ember","frost","galaxy","glimmer","jade","lucky","meadow","nebula","nova","pixel","quest","rainbow","rocket","shadow","spark","tiger","velvet","willow","zen"];
 async function robloxProfile(username) {
   const lookup = await fetch("https://users.roblox.com/v1/usernames/users", {
@@ -157,9 +156,8 @@ app.post("/api/roblox/verify/start", limitAuth, async (req, res) => {
     const existing = db.users.find(u => String(u.robloxId || "") === userId);
     db.verificationChallenges = (db.verificationChallenges || []).filter(c => c.expiresAt > Date.now() && c.userId !== userId);
     const phrase = Array.from({ length: 5 }, () => challengeWords[crypto.randomInt(challengeWords.length)]).join(" ");
-    const challenge = { id: crypto.randomUUID(), userId, username: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl, phraseHash: crypto.createHash("sha256").update(phrase).digest("hex"), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 };
+    const challenge = { id: crypto.randomUUID(), userId, username: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl, phraseHash: crypto.createHash("sha256").update(phrase).digest("hex"), phrase, expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 };
     db.verificationChallenges.push(challenge);
-    pendingVerificationPhrases.set(challenge.id, phrase);
     await writeDB(db);
     res.json({ challengeId: challenge.id, phrase, expiresAt: challenge.expiresAt, profile: { userId, username: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl } });
   } catch (error) { res.status(502).json({ error: error.message || "Could not start verification." }); }
@@ -174,8 +172,8 @@ app.post("/api/roblox/verify/check", limitAuth, async (req, res) => {
   try {
     const profile = await robloxProfile(challenge.username);
     if (!profile || profile.id !== challenge.userId) return res.status(409).json({ error: "Could not confirm that Roblox profile. Try again." });
-    const phrase = pendingVerificationPhrases.get(challenge.id);
-    if (!phrase || crypto.createHash("sha256").update(phrase).digest("hex") !== challenge.phraseHash) return res.status(400).json({ error: "Verification expired after a server restart. Start again." });
+    const phrase = challenge.phrase;
+    if (!phrase || crypto.createHash("sha256").update(phrase).digest("hex") !== challenge.phraseHash) return res.status(400).json({ error: "Verification expired. Start again." });
     if (!profile.description.toLowerCase().includes(phrase.toLowerCase())) {
       await writeDB(db);
       return res.status(400).json({ error: "Code not found in your Roblox About yet. Save it there, then try again." });
@@ -189,7 +187,6 @@ app.post("/api/roblox/verify/check", limitAuth, async (req, res) => {
       user.roblox = profile.username; user.robloxUsername = profile.username; user.displayName = profile.displayName; user.avatarUrl = profile.avatarUrl; user.verifiedAt ||= new Date().toISOString();
     }
     db.verificationChallenges = db.verificationChallenges.filter(c => c.id !== challenge.id);
-    pendingVerificationPhrases.delete(challenge.id);
     await writeDB(db);
     req.session.userId = user.id;
     res.json({ user: cleanUser(user) });
