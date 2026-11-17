@@ -141,7 +141,7 @@ const gameInfo = {
   upgrader: ["Upgrader", "Choose a multiplier. Higher targets have lower win chances."]
 };
 function setGame(game) {
-  currentGame = game; document.querySelectorAll(".game-tab").forEach(b => b.classList.toggle("active", b.dataset.game === game));
+  currentGame = game; if (game === "coinflip") selectedChoice = "heads"; if (game === "dice") selectedChoice = "red"; document.querySelectorAll(".game-tab").forEach(b => b.classList.toggle("active", b.dataset.game === game));
   $("#gameTitle").textContent = gameInfo[game][0]; $("#gameDescription").textContent = gameInfo[game][1];
   $("#gameResult").textContent = "Place a demo bet to play.";
   const opts = $("#gameOptions");
