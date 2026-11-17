@@ -264,6 +264,10 @@ app.get("/api/recent-wins", (req, res) => {
 function publicBot(lobby) {
   return { id: lobby.id, name: lobby.name, game: lobby.game, style: lobby.style, status: lobby.status, rounds: lobby.rounds || 0, playerScore: lobby.playerScore || 0, botScore: lobby.botScore || 0, playerName: lobby.playerName || "", playerColors: lobby.playerColors || [], botColors: lobby.botColors || [], bet: lobby.bet || 0, history: lobby.history || [], winner: lobby.winner || null, payout: lobby.payout || 0, createdAt: lobby.createdAt };
 }
+app.get("/api/arcade/bots/mine", auth, (req, res) => {
+  const match = (readDB().botLobbies || []).find(b => b.playerId === req.user.id && ["playing","completed"].includes(b.status));
+  res.json({ match: match ? publicBot(match) : null });
+});
 app.get("/api/arcade/bots", (req, res) => {
   const bots = (readDB().botLobbies || []).filter(b => b.status === "waiting").map(publicBot);
   res.json({ bots });
