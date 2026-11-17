@@ -223,6 +223,15 @@ app.post("/api/requests", auth, (req, res) => {
   res.json({ request, message: "Request saved as pending. No pet or item has been transferred." });
 });
 
+function petImageUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const asset = raw.match(/(?:rbxassetid:\/\/|^)(\d+)$/i);
+  if (asset) return "https://ps99.biggamesapi.io/image/" + asset[1];
+  if (/^https:\/\//i.test(raw)) return raw;
+  return "";
+}
+
 app.get("/api/pets", async (req, res) => {
   try {
     const response = await fetch("https://ps99.biggamesapi.io/api/collection/Pets");
@@ -263,8 +272,8 @@ app.get("/api/pets", async (req, res) => {
         name: config.name || p.configName || p.name || "Unknown pet",
         type: p.category || config.category || "Pet",
         rarity: config.rarity || "",
-        image: config.thumbnail || p.thumbnail || p.icon || "",
-        goldenImage: config.goldenThumbnail || p.goldenThumbnail || "",
+        image: petImageUrl(config.thumbnail || p.thumbnail || p.icon || ""),
+        goldenImage: petImageUrl(config.goldenThumbnail || p.goldenThumbnail || ""),
         variants: variantsKnown ? Array.from(knownVariants || []) : [],
         variantsKnown
       };
