@@ -53,3 +53,27 @@ GitHub Actions runs Node syntax checks on pushes and pull requests to \`main\`.
 - Before opening this publicly, configure Neon backups, a strong session secret, HTTPS, and operational monitoring. Production password login and unverified profile linking are disabled; Roblox bio verification is required.
 
 Bloxygu is an independent fan project and is not affiliated with Roblox or BIG Games.
+
+
+## Project structure
+
+```text
+bloxygu/
+├── .github/workflows/       # CI checks
+├── public/
+│   ├── assets/
+│   │   ├── css/site.css     # Main responsive design system
+│   │   └── js/app.js        # Browser application entry
+│   └── index.html           # App shell and accessible page regions
+├── src/
+│   ├── config/index.js      # Runtime paths and port configuration
+│   ├── middleware/          # Request middleware (auth throttling)
+│   ├── routes/              # Express route modules
+│   └── services/            # External service integrations (Roblox)
+├── data/                    # Runtime persistence (not committed)
+├── server.js                # Application bootstrap and API composition
+├── package.json
+└── README.md
+```
+
+The server entrypoint composes focused modules from `src/`; external Roblox profile lookup lives in a service, health checks are a route module, and auth throttling is isolated middleware. Browser assets are grouped under `public/assets` instead of the web root.
