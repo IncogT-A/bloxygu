@@ -23,3 +23,73 @@
 .account-area .button{display:flex;align-items:center;gap:8px}.account-avatar{width:25px;height:25px;border-radius:50%;object-fit:cover}.profile-avatar{width:82px;height:82px;border-radius:22px;overflow:hidden;margin:0 0 14px;border:1px solid #ffffff22;background:#20283a}.profile-avatar img{width:100%;height:100%;object-fit:cover}
 
 .recent-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:44px}.recent-wins{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.recent-win{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:13px;font-size:12px}.recent-game{font-weight:800}.recent-game small,.recent-win b small{display:block;color:var(--muted);font-size:10px;font-weight:500;margin-top:4px}.recent-win b{color:var(--green);text-align:right;white-space:nowrap}.recent-win b small{color:var(--muted)}@media(max-width:600px){.recent-wins{grid-template-columns:1fr}.recent-head{align-items:flex-start;flex-direction:column}}
+
+
+/* Bloxygu polish pass: richer surfaces, clear hierarchy, responsive admin + bot arena */
+:root{--panel:#131a29;--panel2:#1a2234;--line:#2b354a;--muted:#9ca8bb}
+body{background:radial-gradient(ellipse at 50% -25%,#252044 0,transparent 48%),#090c14}
+.topbar{border-bottom-color:#ffffff12;box-shadow:0 12px 35px #0002}
+.brand-mark{box-shadow:0 5px 20px #9b7bff40}
+.nav-link{border-radius:10px;transition:background .2s,color .2s}
+.nav-link.active{background:#a78bfa18;color:#c9bcff}
+.button{min-height:43px}
+.button:focus-visible,.nav-link:focus-visible,.choice:focus-visible,.field:focus-visible{outline:2px solid #75e3d2;outline-offset:3px}
+.feature-card,.pet-card,.game-panel,.admin-card,.bot-card,.leader-row{box-shadow:0 14px 36px #0002}
+.feature-card{transition:transform .2s,border-color .2s,box-shadow .2s}
+.feature-card:hover{box-shadow:0 18px 42px #0004}
+.pet-card{transition:transform .18s,border-color .18s}
+.pet-card:hover{transform:translateY(-3px);border-color:#8d7bdb88}
+.pet-image{background:radial-gradient(circle at 50% 40%,#343052,#141a29 72%)}
+.game-panel{background:linear-gradient(135deg,#1a2132,#101521 72%);border-color:#ffffff17}
+.game-display{background:radial-gradient(circle at center,#1c2340,#0b101a 72%)}
+.game-tab{transition:.2s}
+.game-tab:hover,.choice:hover{border-color:#8976d7;color:#fff}
+.field{min-height:44px}
+.bot-arena{margin-top:42px;padding:24px;border:1px solid #ffffff13;border-radius:20px;background:linear-gradient(145deg,#151c2b,#0f1420)}
+.bot-arena .section-head{margin:0 0 18px;display:flex;justify-content:space-between;align-items:center;gap:15px}
+.bot-arena .section-head h2,.admin-card h2{font:700 24px "Space Grotesk";margin:0 0 7px}
+.bot-arena-content{display:grid;gap:10px}
+.bot-card{display:flex;align-items:center;gap:14px;padding:14px;border:1px solid #ffffff12;background:#0c1220;border-radius:15px}
+.bot-avatar{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(145deg,#342a5b,#172d3b);font-size:25px}
+.bot-meta{flex:1;min-width:0}.bot-meta b{display:block;font-size:14px}.bot-meta small,.bot-match-head small{display:block;color:var(--muted);font-size:11px;margin-top:5px}
+.demo-tag{display:inline-block;margin-left:6px;padding:3px 6px;border-radius:5px;background:#5bd9b31a;color:#72e5bd;font-size:8px;letter-spacing:1px;vertical-align:middle}
+.bot-join{white-space:nowrap;padding:10px 13px}
+.empty-state{display:grid;justify-items:center;gap:8px;padding:28px;border:1px dashed #ffffff20;border-radius:15px;color:var(--muted);text-align:center}
+.empty-state span{font-size:30px}.empty-state b{color:#fff;font-size:14px}.empty-state small{font-size:11px}
+.bot-match{padding:18px;border:1px solid #8f7bf04a;border-radius:16px;background:linear-gradient(145deg,#211d3a,#111927)}
+.bot-match-head{display:flex;align-items:center;gap:12px}.bot-match-head>div:nth-child(2){flex:1}.bot-match-head b{font-size:14px}.match-score{font:700 24px "Space Grotesk";color:#bcaaff}
+.match-score-label{display:flex;justify-content:space-between;margin:18px 4px 0;color:var(--muted);font-size:9px;letter-spacing:2px}
+.match-round{margin-top:16px;color:#a99aff;font-size:10px;font-weight:800;letter-spacing:2px}
+.bot-round-message{color:#e8e8f2;font-size:13px;line-height:1.6}
+.bot-choice-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.bot-choice-grid .choice{padding:12px 5px}
+.bot-match-result{padding:15px;text-align:center;border-radius:12px;background:#69e6b21a;color:#8cf0c3;font-weight:800;font-size:13px;letter-spacing:1px}
+.admin-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}
+.admin-stat{padding:17px;border:1px solid var(--line);border-radius:15px;background:linear-gradient(145deg,#1b2233,#111723)}
+.admin-stat small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:1.2px}
+.admin-stat b{display:block;margin-top:8px;font:700 25px "Space Grotesk"}
+.admin-layout{display:grid;grid-template-columns:.85fr 1.15fr;gap:14px}
+.admin-card{padding:21px;border:1px solid var(--line);border-radius:17px;background:linear-gradient(145deg,#171e2d,#101521);margin-bottom:14px;min-width:0}
+.admin-card .section-head{margin:0 0 14px}
+.admin-card .control-label{margin-top:14px}
+.admin-wide{margin-top:4px}
+.admin-list{display:grid;gap:8px;margin-top:14px}
+.admin-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #ffffff10;border-radius:11px;background:#0c1220;font-size:12px;min-width:0}
+.admin-row>span:first-child{min-width:0;overflow-wrap:anywhere}
+.admin-row small{display:block;color:var(--muted);font-size:10px;margin-top:5px;line-height:1.5}
+.admin-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.admin-status{width:auto;min-width:112px;padding:8px;font-size:11px}
+.danger-text{color:#ff8798}
+@media(max-width:760px){
+ .admin-stats{grid-template-columns:repeat(2,1fr);gap:8px}
+ .admin-stat{padding:13px}.admin-stat b{font-size:21px}
+ .admin-layout{grid-template-columns:1fr}
+ .admin-card{padding:16px}
+ .bot-arena{padding:15px}
+ .bot-card{flex-wrap:wrap}
+ .bot-join{width:100%}
+ .bot-arena .section-head{align-items:flex-start}
+ .admin-row{align-items:flex-start;flex-direction:column}
+ .admin-actions{width:100%;justify-content:flex-end}
+}
+@media(max-width:420px){.bot-choice-grid{grid-template-columns:repeat(2,1fr)}.bot-arena .section-head h2{font-size:20px}.admin-stats{grid-template-columns:repeat(2,1fr)}}
