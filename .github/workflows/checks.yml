@@ -46,7 +46,11 @@ jobs:
             http://127.0.0.1:3333/api/game
           curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" -H "Content-Type: application/json" \
             -d '{"bet":100}' http://127.0.0.1:3333/api/blackjack/start
-          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/blackjack/state
+          BJ_STATE=$(curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/blackjack/state)
+          if echo "$BJ_STATE" | grep -q '"active":true'; then
+            curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" -H "Content-Type: application/json" \
+              -d '{}' http://127.0.0.1:3333/api/blackjack/stand
+          fi
           curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" -H "Content-Type: application/json" \
             -d '{"bet":100,"mines":3}' http://127.0.0.1:3333/api/mines/start
           curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/mines/state
