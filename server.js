@@ -14,7 +14,7 @@ const { Pool } = require("pg");
 const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 })
   : null;
-const EMPTY_DB = { users: [], transactions: [], requests: [], activeMines: {}, activeBlackjack: {}, verificationChallenges: [] };
+const EMPTY_DB = { users: [], transactions: [], requests: [], activeMines: {}, activeBlackjack: {}, verificationChallenges: [], botLobbies: [] };
 let dbCache = null;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -51,6 +51,8 @@ async function initDB() {
     dbCache.activeMines ||= {};
     dbCache.verificationChallenges ||= [];
     dbCache.activeBlackjack ||= {};
+    dbCache.botLobbies ||= [];
+    dbCache.botLobbies ||= [];
     mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
       ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
     }]));
@@ -66,8 +68,16 @@ async function initDB() {
     console.log("Bloxygu database: local JSON (development only)");
   }
 }
+function isAdmin(user) {
+  const allowed = String(process.env.ADMIN_ROBLOX_IDS || "").split(",").map(x => x.trim()).filter(Boolean);
+  return Boolean(user && user.robloxId && allowed.includes(String(user.robloxId)));
+}
+function adminAuth(req, res, next) {
+  if (!req.user || !isAdmin(req.user)) return res.status(403).json({ error: "Admin access is not enabled for this verified Roblox account." });
+  next();
+}
 function cleanUser(user) {
-  return { id: user.id, username: user.username, credits: user.credits, roblox: user.robloxId ? (user.robloxUsername || user.roblox || "") : "", robloxId: user.robloxId || null, displayName: user.displayName || user.username, avatarUrl: user.avatarUrl || "", verifiedAt: user.verifiedAt || null, createdAt: user.createdAt };
+  return { id: user.id, username: user.username, credits: user.credits, isAdmin: isAdmin(user), roblox: user.robloxId ? (user.robloxUsername || user.roblox || "") : "", robloxId: user.robloxId || null, displayName: user.displayName || user.username, avatarUrl: user.avatarUrl || "", verifiedAt: user.verifiedAt || null, createdAt: user.createdAt };
 }
 function auth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: "Please log in first." });
@@ -249,6 +259,89 @@ app.get("/api/recent-wins", (req, res) => {
     .slice(0, 12)
     .map(t => ({ username: t.username, game: t.type === "mines-cashout" ? "Mines" : t.type === "blackjack" ? "Blackjack" : t.type === "coinflip" ? "Coinflip" : t.type === "upgrader" ? "Upgrader" : "Color Dice", amount: t.amount, createdAt: t.createdAt }));
   res.json({ wins });
+});
+
+function publicBot(lobby) {
+  return { id: lobby.id, name: lobby.name, game: lobby.game, style: lobby.style, status: lobby.status, rounds: lobby.rounds || 0, playerScore: lobby.playerScore || 0, botScore: lobby.botScore || 0, createdAt: lobby.createdAt };
+}
+app.get("/api/arcade/bots", (req, res) => {
+  const bots = (readDB().botLobbies || []).filter(b => b.status === "waiting").map(publicBot);
+  res.json({ bots });
+});
+app.get("/api/admin/overview", auth, adminAuth, (req, res) => {
+  const db = req.db;
+  res.json({
+    stats: { users: db.users.length, demoCredits: db.users.reduce((sum, u) => sum + Number(u.credits || 0), 0), pendingRequests: db.requests.filter(r => r.status === "pending").length, botLobbies: (db.botLobbies || []).length },
+    requests: db.requests.slice(0, 40),
+    bots: (db.botLobbies || []).map(publicBot),
+    users: db.users.slice().sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 30).map(u => ({ username: u.username, roblox: u.robloxUsername || "", credits: u.credits, createdAt: u.createdAt }))
+  });
+});
+app.post("/api/admin/bots", auth, adminAuth, async (req, res) => {
+  const name = String(req.body.name || "Bloxygu Demo Bot").trim().slice(0, 24);
+  const game = String(req.body.game || "dice");
+  const style = String(req.body.style || "balanced");
+  if (!name || !["dice", "coinflip"].includes(game) || !["balanced", "bold", "calm"].includes(style)) return res.status(400).json({ error: "Choose a name, Color Dice or Coinflip, and a valid bot style." });
+  req.db.botLobbies ||= [];
+  const lobby = { id: crypto.randomUUID(), name, game, style, status: "waiting", rounds: 0, playerScore: 0, botScore: 0, playerId: null, playerName: null, createdBy: req.user.id, createdAt: new Date().toISOString() };
+  req.db.botLobbies.unshift(lobby);
+  await writeDB(req.db);
+  res.json({ bot: publicBot(lobby) });
+});
+app.post("/api/admin/bots/:id/start", auth, adminAuth, async (req, res) => {
+  const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id);
+  if (!bot) return res.status(404).json({ error: "Demo bot not found." });
+  bot.status = "waiting"; bot.playerId = null; bot.playerName = null; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0;
+  await writeDB(req.db); res.json({ bot: publicBot(bot) });
+});
+app.post("/api/admin/bots/:id/stop", auth, adminAuth, async (req, res) => {
+  const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id);
+  if (!bot) return res.status(404).json({ error: "Demo bot not found." });
+  bot.status = "stopped"; bot.playerId = null; bot.playerName = null;
+  await writeDB(req.db); res.json({ bot: publicBot(bot) });
+});
+app.delete("/api/admin/bots/:id", auth, adminAuth, async (req, res) => {
+  req.db.botLobbies = (req.db.botLobbies || []).filter(b => b.id !== req.params.id);
+  await writeDB(req.db); res.json({ ok: true });
+});
+app.post("/api/arcade/bots/:id/join", auth, async (req, res) => {
+  const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.status === "waiting");
+  if (!bot) return res.status(404).json({ error: "This demo bot is no longer waiting." });
+  if (bot.createdBy === req.user.id) return res.status(400).json({ error: "Use another account to test your own demo bot lobby." });
+  if (req.db.activeMines?.[req.user.id] || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your current game first." });
+  bot.status = "playing"; bot.playerId = req.user.id; bot.playerName = req.user.displayName || req.user.username; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0;
+  await writeDB(req.db); res.json({ match: publicBot(bot) });
+});
+app.post("/api/arcade/bots/:id/round", auth, async (req, res) => {
+  const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.status === "playing" && b.playerId === req.user.id);
+  if (!bot) return res.status(404).json({ error: "You are not in this demo match." });
+  const allowed = bot.game === "dice" ? ["red","blue","green","purple"] : ["heads","tails"];
+  const choice = String(req.body.choice || "");
+  if (!allowed.includes(choice)) return res.status(400).json({ error: "Choose a valid move." });
+  const landed = bot.game === "dice" ? ["red","blue","green","purple"][crypto.randomInt(4)] : (crypto.randomInt(2) ? "heads" : "tails");
+  const botChoice = allowed[crypto.randomInt(allowed.length)];
+  const playerCorrect = choice === landed, botCorrect = botChoice === landed;
+  const outcome = playerCorrect && !botCorrect ? "player" : botCorrect && !playerCorrect ? "bot" : "draw";
+  if (outcome === "player") bot.playerScore++;
+  if (outcome === "bot") bot.botScore++;
+  bot.rounds++;
+  if (bot.rounds >= 5 || bot.playerScore >= 3 || bot.botScore >= 3) bot.status = "completed";
+  await writeDB(req.db);
+  res.json({ landed, choice, botChoice, outcome, match: publicBot(bot), winner: bot.status === "completed" ? (bot.playerScore > bot.botScore ? "player" : bot.botScore > bot.playerScore ? "bot" : "draw") : null });
+});
+app.post("/api/arcade/bots/:id/leave", auth, async (req, res) => {
+  const bot = (req.db.botLobbies || []).find(b => b.id === req.params.id && b.playerId === req.user.id);
+  if (!bot) return res.status(404).json({ error: "Match not found." });
+  bot.status = "waiting"; bot.playerId = null; bot.playerName = null; bot.rounds = 0; bot.playerScore = 0; bot.botScore = 0;
+  await writeDB(req.db); res.json({ ok: true });
+});
+app.post("/api/admin/requests/:id/status", auth, adminAuth, async (req, res) => {
+  const status = String(req.body.status || "");
+  if (!["pending","approved","rejected","completed"].includes(status)) return res.status(400).json({ error: "Invalid request status." });
+  const item = req.db.requests.find(r => r.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "Request not found." });
+  item.status = status; item.reviewedAt = new Date().toISOString(); item.reviewedBy = req.user.id;
+  await writeDB(req.db); res.json({ request: item });
 });
 app.get("/api/leaderboard", (req, res) => {
   const db = readDB();
