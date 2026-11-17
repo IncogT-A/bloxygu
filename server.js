@@ -394,6 +394,10 @@ app.post("/api/blackjack/start", auth, async (req, res) => {
   await writeDB(req.db);
   res.json({ round: publicBlackjack(round), user: cleanUser(req.user) });
 });
+app.get("/api/blackjack/state", auth, (req, res) => {
+  const round = req.db.activeBlackjack[req.user.id];
+  res.json({ active: Boolean(round), round: round ? publicBlackjack(round) : null });
+});
 app.post("/api/blackjack/hit", auth, async (req, res) => {
   const round = req.db.activeBlackjack[req.user.id];
   if (!round || round.finished) return res.status(400).json({ error: "No active Blackjack hand." });
