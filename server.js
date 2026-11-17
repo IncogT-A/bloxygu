@@ -13,7 +13,7 @@ const { Pool } = require("pg");
 const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 })
   : null;
-const EMPTY_DB = { users: [], transactions: [], requests: [], activeMines: {} };
+const EMPTY_DB = { users: [], transactions: [], requests: [], activeMines: {}, verificationChallenges: [] };
 let dbCache = null;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -48,6 +48,7 @@ async function initDB() {
       await pool.query("INSERT INTO bloxygu_state (id, state) VALUES (1, $1::jsonb)", [JSON.stringify(dbCache)]);
     }
     dbCache.activeMines ||= {};
+    dbCache.verificationChallenges ||= [];
     mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
       ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
     }]));
@@ -55,6 +56,7 @@ async function initDB() {
   } else {
     dbCache = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
     dbCache.activeMines ||= {};
+    dbCache.verificationChallenges ||= [];
     mineRounds = new Map(Object.entries(dbCache.activeMines).map(([userId, round]) => [userId, {
       ...round, positions: new Set(round.positions || []), picks: new Set(round.picks || [])
     }]));
@@ -62,7 +64,7 @@ async function initDB() {
   }
 }
 function cleanUser(user) {
-  return { id: user.id, username: user.username, credits: user.credits, roblox: user.roblox || "", createdAt: user.createdAt };
+  return { id: user.id, username: user.username, credits: user.credits, roblox: user.roblox || user.robloxUsername || "", robloxId: user.robloxId || null, displayName: user.displayName || user.username, avatarUrl: user.avatarUrl || "", verifiedAt: user.verifiedAt || null, createdAt: user.createdAt };
 }
 function auth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: "Please log in first." });
@@ -108,6 +110,88 @@ app.get("/api/me", (req, res) => {
   const db = readDB();
   const user = db.users.find(u => u.id === req.session.userId);
   res.json({ user: user ? cleanUser(user) : null });
+});
+
+
+const crypto = require("crypto");
+const pendingVerificationPhrases = new Map();
+const challengeWords = ["amber","blox","comet","daisy","dragon","ember","frost","galaxy","glimmer","jade","lucky","meadow","nebula","nova","pixel","quest","rainbow","rocket","shadow","spark","tiger","velvet","willow","zen"];
+async function robloxProfile(username) {
+  const lookup = await fetch("https://users.roblox.com/v1/usernames/users", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ usernames: [username], excludeBannedUsers: true })
+  });
+  if (!lookup.ok) throw new Error("Roblox lookup is temporarily unavailable. Try again.");
+  const found = (await lookup.json()).data?.[0];
+  if (!found) return null;
+  const [profileResponse, avatarResponse] = await Promise.all([
+    fetch("https://users.roblox.com/v1/users/" + encodeURIComponent(found.id)),
+    fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" + encodeURIComponent(found.id) + "&size=150x150&format=Png&isCircular=false")
+  ]);
+  if (!profileResponse.ok) throw new Error("Could not read that Roblox profile. Try again.");
+  const profile = await profileResponse.json();
+  const avatarData = avatarResponse.ok ? await avatarResponse.json() : {};
+  return { id: String(found.id), username: profile.name || found.name, displayName: profile.displayName || found.displayName || found.name, description: String(profile.description || ""), avatarUrl: avatarData.data?.[0]?.imageUrl || "" };
+}
+app.post("/api/roblox/lookup", limitAuth, async (req, res) => {
+  const username = String(req.body.username || "").trim();
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: "Enter a valid Roblox username." });
+  try {
+    const profile = await robloxProfile(username);
+    if (!profile) return res.status(404).json({ error: "We couldn't find that Roblox account." });
+    const existing = readDB().users.find(u => String(u.robloxId || "") === profile.id);
+    res.json({ profile: { userId: profile.id, username: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl }, alreadyLinked: Boolean(existing) });
+  } catch (error) { res.status(502).json({ error: error.message || "Roblox lookup failed." }); }
+});
+app.post("/api/roblox/verify/start", limitAuth, async (req, res) => {
+  const userId = String(req.body.userId || "");
+  const username = String(req.body.username || "");
+  if (!/^\d{1,20}$/.test(userId)) return res.status(400).json({ error: "Look up your Roblox account first." });
+  try {
+    const profile = await robloxProfile(username);
+    if (!profile || profile.id !== userId) return res.status(409).json({ error: "That Roblox account changed. Look it up again." });
+    const db = readDB();
+    const existing = db.users.find(u => String(u.robloxId || "") === userId);
+    if (existing) return res.status(409).json({ error: "That Roblox account is already linked. Log in with its verification flow." });
+    db.verificationChallenges = (db.verificationChallenges || []).filter(c => c.expiresAt > Date.now() && c.userId !== userId);
+    const phrase = Array.from({ length: 5 }, () => challengeWords[crypto.randomInt(challengeWords.length)]).join(" ");
+    const challenge = { id: crypto.randomUUID(), userId, username: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl, phraseHash: crypto.createHash("sha256").update(phrase).digest("hex"), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 };
+    db.verificationChallenges.push(challenge);
+    pendingVerificationPhrases.set(challenge.id, phrase);
+    await writeDB(db);
+    res.json({ challengeId: challenge.id, phrase, expiresAt: challenge.expiresAt, profile: { userId, username: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl } });
+  } catch (error) { res.status(502).json({ error: error.message || "Could not start verification." }); }
+});
+app.post("/api/roblox/verify/check", limitAuth, async (req, res) => {
+  const challengeId = String(req.body.challengeId || "");
+  const db = readDB();
+  const challenge = (db.verificationChallenges || []).find(c => c.id === challengeId);
+  if (!challenge || challenge.expiresAt < Date.now()) return res.status(400).json({ error: "Your code expired. Start verification again." });
+  if (challenge.attempts >= 8) return res.status(429).json({ error: "Too many checks. Start a new verification." });
+  challenge.attempts += 1;
+  try {
+    const profile = await robloxProfile(challenge.username);
+    if (!profile || profile.id !== challenge.userId) return res.status(409).json({ error: "Could not confirm that Roblox profile. Try again." });
+    const phrase = pendingVerificationPhrases.get(challenge.id);
+    if (!phrase || crypto.createHash("sha256").update(phrase).digest("hex") !== challenge.phraseHash) return res.status(400).json({ error: "Verification expired after a server restart. Start again." });
+    if (!profile.description.toLowerCase().includes(phrase.toLowerCase())) {
+      await writeDB(db);
+      return res.status(400).json({ error: "Code not found in your Roblox About yet. Save it there, then try again." });
+    }
+    let user = db.users.find(u => String(u.robloxId || "") === profile.id);
+    if (!user) {
+      user = { id: crypto.randomUUID(), username: profile.username, roblox: profile.username, robloxId: profile.id, robloxUsername: profile.username, displayName: profile.displayName, avatarUrl: profile.avatarUrl, verifiedAt: new Date().toISOString(), credits: 25000, lastDaily: null, createdAt: new Date().toISOString() };
+      db.users.push(user);
+      transaction(db, user, "bonus", 25000, "Welcome bonus — demo credits");
+    } else {
+      user.roblox = profile.username; user.robloxUsername = profile.username; user.displayName = profile.displayName; user.avatarUrl = profile.avatarUrl; user.verifiedAt ||= new Date().toISOString();
+    }
+    db.verificationChallenges = db.verificationChallenges.filter(c => c.id !== challenge.id);
+    pendingVerificationPhrases.delete(challenge.id);
+    await writeDB(db);
+    req.session.userId = user.id;
+    res.json({ user: cleanUser(user) });
+  } catch (error) { res.status(502).json({ error: error.message || "Roblox verification failed." }); }
 });
 
 app.post("/api/register", limitAuth, async (req, res) => {
