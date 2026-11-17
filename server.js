@@ -67,7 +67,7 @@ async function initDB() {
   }
 }
 function cleanUser(user) {
-  return { id: user.id, username: user.username, credits: user.credits, roblox: user.roblox || user.robloxUsername || "", robloxId: user.robloxId || null, displayName: user.displayName || user.username, avatarUrl: user.avatarUrl || "", verifiedAt: user.verifiedAt || null, createdAt: user.createdAt };
+  return { id: user.id, username: user.username, credits: user.credits, roblox: user.robloxId ? (user.robloxUsername || user.roblox || "") : "", robloxId: user.robloxId || null, displayName: user.displayName || user.username, avatarUrl: user.avatarUrl || "", verifiedAt: user.verifiedAt || null, createdAt: user.createdAt };
 }
 function auth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: "Please log in first." });
@@ -259,27 +259,27 @@ app.post("/api/game", auth, async (req, res) => {
     const colors = ["red", "blue", "green", "purple"];
     const choice = String(req.body.choice || "");
     if (!colors.includes(choice)) return res.status(400).json({ error: "Choose a valid dice color." });
-    const landed = colors[Math.floor(Math.random() * colors.length)];
+    const landed = colors[crypto.randomInt(colors.length)];
     win = landed === choice;
     payout = win ? bet * 3 : 0;
     result = { landed, choice, multiplier: 3 };
   } else if (game === "coinflip") {
     const choice = String(req.body.choice || "");
     if (!["heads", "tails"].includes(choice)) return res.status(400).json({ error: "Choose heads or tails." });
-    const landed = Math.random() < 0.5 ? "heads" : "tails";
+    const landed = crypto.randomInt(2) === 0 ? "heads" : "tails";
     win = landed === choice;
     payout = win ? bet * 2 : 0;
     result = { landed, choice, multiplier: 2 };
   } else if (game === "mines") {
     const mines = Math.max(1, Math.min(20, Math.floor(Number(req.body.mines) || 3)));
-    const pick = Math.floor(Math.random() * 25);
+    const pick = crypto.randomInt(25);
     win = pick >= mines;
     payout = win ? Math.floor(bet * (1 + mines / 10)) : 0;
     result = { pick, mines, multiplier: win ? (1 + mines / 10) : 0 };
   } else if (game === "upgrader") {
     const target = Number(req.body.target);
     if (!Number.isFinite(target) || target < 1.1 || target > 10) return res.status(400).json({ error: "Multiplier must be between 1.1x and 10x." });
-    win = Math.random() < (0.96 / target);
+    win = crypto.randomInt(1000000) < Math.floor((0.96 / target) * 1000000);
     payout = win ? Math.floor(bet * target) : 0;
     result = { target, chance: (0.96 / target * 100).toFixed(1) };
   } else {
@@ -302,7 +302,7 @@ app.post("/api/mines/start", auth, async (req, res) => {
   if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
   if (mineRounds.has(req.user.id) || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your active game round first." });
   const positions = new Set();
-  while (positions.size < mines) positions.add(Math.floor(Math.random() * 25));
+  while (positions.size < mines) positions.add(crypto.randomInt(25));
   const round = { bet, mines, positions, picks: new Set(), multiplier: 1 };
   mineRounds.set(req.user.id, round);
   req.db.activeMines[req.user.id] = { bet, mines, positions: Array.from(positions), picks: [], multiplier: 1 };
