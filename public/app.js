@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let me = null, authMode = "login", currentGame = "dice", selectedChoice = "red", petData = [];
+let me = null, authMode = "login", currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false;
 
 function toast(message) {
   const el = $("#toast"); el.textContent = message; el.classList.add("show");
@@ -41,6 +41,7 @@ $("#accountButton").addEventListener("click", () => {
   $("#profileName").textContent = me.username; $("#profileBalance").textContent = me.credits.toLocaleString() + " demo credits";
   $("#robloxName").value = me.roblox || ""; $("#profileMessage").textContent = "";
   $("#profileModal").classList.remove("hidden");
+  loadAccountActivity();
 });
 $("#authSwitch").addEventListener("click", () => openAuth(authMode === "login" ? "register" : "login"));
 $("#authForm").addEventListener("submit", async e => {
@@ -88,6 +89,24 @@ function escapeAttr(s) { return escapeHtml(s); }
 $("#petSearch").addEventListener("input", renderPets);
 $("#petType").addEventListener("change", renderPets);
 $("#petVariant").addEventListener("change", renderPets);
+
+async function loadAccountActivity() {
+  try {
+    const [tx, req] = await Promise.all([api("/api/transactions"), api("/api/requests")]);
+    $("#transactionList").innerHTML = tx.transactions.length ? tx.transactions.map(t => '<div class="history-row"><span>' + escapeHtml(t.note) + '<small>' + new Date(t.createdAt).toLocaleString() + '</small></span><b class="' + (t.amount >= 0 ? 'positive' : 'negative') + '">' + (t.amount > 0 ? '+' : '') + Number(t.amount).toLocaleString() + '</b></div>').join("") : '<p class="small-note">No transactions yet.</p>';
+    $("#requestList").innerHTML = req.requests.length ? req.requests.map(x => '<div class="history-row"><span>' + escapeHtml(x.kind) + '<small>' + escapeHtml(x.details) + '</small></span><b>' + escapeHtml(x.status) + '</b></div>').join("") : '<p class="small-note">No requests yet.</p>';
+  } catch (e) { $("#transactionList").textContent = e.message; }
+}
+$("#sendRequest").addEventListener("click", async () => {
+  const details = $("#requestDetails").value.trim();
+  if (!details) return toast("Add the pet details first.");
+  try {
+    const data = await api("/api/requests", { method: "POST", body: JSON.stringify({ kind: $("#requestKind").value, details }) });
+    $("#requestDetails").value = "";
+    $("#profileMessage").textContent = data.message;
+    await loadAccountActivity();
+  } catch (e) { toast(e.message); }
+});
 
 async function loadLeaderboard() {
   try {
