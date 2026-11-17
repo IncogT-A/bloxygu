@@ -232,7 +232,13 @@ function petImageUrl(value) {
   return "";
 }
 
+let petCache = null;
+let petCacheAt = 0;
 app.get("/api/pets", async (req, res) => {
+  if (petCache && Date.now() - petCacheAt < 60 * 1000) {
+    res.set("Cache-Control", "public, max-age=60");
+    return res.json(petCache);
+  }
   try {
     const response = await fetch("https://ps99.biggamesapi.io/api/collection/Pets");
     if (!response.ok) throw new Error("Pet collection unavailable");
@@ -278,8 +284,10 @@ app.get("/api/pets", async (req, res) => {
         variantsKnown
       };
     });
-    res.set("Cache-Control", "public, max-age=3600");
-    res.json({ pets, variantsKnown });
+    petCache = { pets, variantsKnown };
+    petCacheAt = Date.now();
+    res.set("Cache-Control", "public, max-age=60");
+    res.json(petCache);
   } catch {
     res.status(502).json({ error: "The live pet catalog is temporarily unavailable.", pets: [] });
   }
