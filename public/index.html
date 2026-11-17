@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d14">
+  <meta name="description" content="Bloxygu — your PS99 community hub.">
+  <title>Bloxygu — PS99 Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="glow glow-a"></div><div class="glow glow-b"></div>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">B</span><span>bloxy<span class="accent">gu</span></span></a>
+    <nav><button class="nav-link active" data-page="home">Home</button><button class="nav-link" data-page="pets">Pet index</button><button class="nav-link" data-page="games">Games</button><button class="nav-link" data-page="leaderboard">Leaderboard</button></nav>
+    <div class="account-area"><span id="balance" class="balance hidden">◆ 25,000</span><button id="accountButton" class="button button-soft">Log in</button></div>
+  </header>
+  <main>
+    <section id="homePage" class="page">
+      <div class="hero">
+        <div class="hero-copy"><div class="eyebrow"><span class="pulse"></span> THE COMMUNITY HUB FOR PS99</div><h1>Your pets.<br><span class="gradient-text">Your playground.</span></h1><p>Explore the pet index, challenge your luck in demo games, and keep up with the Bloxygu community.</p><div class="hero-actions"><button class="button button-primary" data-go="pets">Explore pets <span>↗</span></button><button class="button button-soft" data-go="games">Play games</button></div><div class="hero-note">✦ Demo credits only · No real-money value</div></div>
+        <div class="hero-art"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="pet-orb orb-main">🐉</div><div class="pet-orb orb-small orb-left">🐱</div><div class="pet-orb orb-small orb-right">🦄</div><div class="float-tag tag-top">HUGE ENERGY</div><div class="float-tag tag-bottom">BLOXYGU ✦</div></div>
+      </div>
+      <div class="section-head"><div><div class="eyebrow">WHAT'S INSIDE</div><h2>Made for the grind.</h2></div></div>
+      <div class="feature-grid">
+        <button class="feature-card" data-go="pets"><span class="feature-icon purple">✦</span><span class="feature-title">Pet index</span><span class="feature-desc">Browse PS99 pets and their available catalog details.</span><span class="feature-arrow">↗</span></button>
+        <button class="feature-card" data-go="games"><span class="feature-icon green">♧</span><span class="feature-title">Mini games</span><span class="feature-desc">Dice, coinflip, mines and upgrader with demo credits.</span><span class="feature-arrow">↗</span></button>
+        <button class="feature-card" data-go="leaderboard"><span class="feature-icon orange">♛</span><span class="feature-title">Leaderboard</span><span class="feature-desc">See who's stacking the most demo credits.</span><span class="feature-arrow">↗</span></button>
+      </div>
+    </section>
+
+    <section id="petsPage" class="page hidden">
+      <div class="page-heading"><div class="eyebrow">THE COLLECTION</div><h1>Pet <span class="gradient-text">index.</span></h1><p>Search the live catalog. Values will be added in a later update.</p></div>
+      <div class="toolbar"><input id="petSearch" class="field search" placeholder="Search pets..." autocomplete="off"><select id="petType" class="field"><option value="all">All types</option><option value="Huge">Huge</option><option value="Titanic">Titanic</option><option value="Exclusive">Exclusive</option></select><select id="petVariant" class="field"><option value="Normal">Normal</option><option value="Golden">Golden</option></select></div>
+      <div id="petStatus" class="muted">Loading pet catalog...</div><div id="petGrid" class="pet-grid"></div>
+    </section>
+
+    <section id="gamesPage" class="page hidden">
+      <div class="page-heading"><div class="eyebrow">FOR FUN ONLY</div><h1>Choose your <span class="gradient-text">game.</span></h1><p>These games use fictional demo credits. They are not redeemable and have no cash value.</p></div>
+      <div class="game-tabs"><button class="game-tab active" data-game="dice">Color dice</button><button class="game-tab" data-game="coinflip">Coinflip</button><button class="game-tab" data-game="mines">Mines</button><button class="game-tab" data-game="upgrader">Upgrader</button></div>
+      <div class="game-panel"><div class="game-info"><div class="eyebrow">BLOXYGU ARCADE</div><h2 id="gameTitle">Color Dice Duel</h2><p id="gameDescription">Pick a color. Match the roll and win 3× your bet.</p><div class="game-display" id="gameDisplay"><div class="dice-face">?</div></div><div id="gameResult" class="game-result">Place a demo bet to play.</div></div>
+        <div class="game-controls"><label class="control-label">Your bet</label><input id="bet" class="field bet-field" type="number" min="10" max="5000" value="100"><div id="gameOptions" class="options"><button class="choice selected" data-choice="red">Red</button><button class="choice" data-choice="blue">Blue</button><button class="choice" data-choice="green">Green</button><button class="choice" data-choice="purple">Purple</button></div><button id="playGame" class="button button-primary full">Play round <span>↗</span></button><div class="small-note">Min 10 · Max 5,000 demo credits</div></div>
+      </div>
+    </section>
+
+    <section id="leaderboardPage" class="page hidden">
+      <div class="page-heading"><div class="eyebrow">THE TOP PLAYERS</div><h1>Leaderboard<span class="gradient-text">.</span></h1><p>Ranked by demo credit balance.</p></div><div id="leaderboard" class="leaderboard-list">Loading...</div>
+    </section>
+  </main>
+  <footer><a class="brand" href="#"><span class="brand-mark">B</span><span>bloxy<span class="accent">gu</span></span></a><span>Fan-made community project · Not affiliated with BIG Games or Roblox.</span></footer>
+
+  <div id="authModal" class="modal hidden"><div class="modal-card"><button class="modal-close" data-close>×</button><div class="eyebrow">WELCOME TO BLOXYGU</div><h2 id="authTitle">Log in</h2><form id="authForm"><label class="control-label">Username</label><input class="field" id="authUsername" required minlength="3" maxlength="18" autocomplete="username"><label class="control-label">Password</label><input class="field" id="authPassword" type="password" required minlength="8" autocomplete="current-password"><button class="button button-primary full" id="authSubmit">Log in</button></form><p id="authError" class="error"></p><button id="authSwitch" class="text-button">Need an account? Sign up</button><p class="small-note">Demo credits only. Never use your Roblox password here.</p></div></div>
+  <div id="profileModal" class="modal hidden"><div class="modal-card"><button class="modal-close" data-close>×</button><div class="eyebrow">YOUR ACCOUNT</div><h2 id="profileName">Profile</h2><p id="profileBalance" class="muted"></p><label class="control-label">Roblox username (optional)</label><input class="field" id="robloxName" maxlength="20" placeholder="Your Roblox username"><button id="saveProfile" class="button button-primary full">Save profile</button><button id="dailyClaim" class="button button-soft full">Claim daily +1,000</button><button id="logout" class="text-button">Log out</button><p id="profileMessage" class="small-note"></p></div></div>
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
