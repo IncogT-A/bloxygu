@@ -288,7 +288,7 @@ app.post("/api/admin/bots", auth, adminAuth, async (req, res) => {
   const name = String(req.body.name || "Bloxygu Demo Bot").trim().slice(0, 24);
   const game = String(req.body.game || "dice");
   const style = String(req.body.style || "balanced");
-  if (!name || !["dice", "coinflip"].includes(game) || !["balanced", "bold", "calm"].includes(style)) return res.status(400).json({ error: "Choose a name, Color Dice or Coinflip, and a valid bot style." });
+  if (!name || game !== "dice" || !["balanced", "bold", "calm"].includes(style)) return res.status(400).json({ error: "Choose a name, Color Dice, and a valid bot style." });
   req.db.botLobbies ||= [];
   const lobby = { id: crypto.randomUUID(), name, game, style, status: "waiting", rounds: 0, playerScore: 0, botScore: 0, playerId: null, playerName: null, createdBy: req.user.id, createdAt: new Date().toISOString() };
   req.db.botLobbies.unshift(lobby);
