@@ -65,17 +65,22 @@ async function loadPets() {
   $("#petStatus").textContent = "Loading live pet catalog...";
   try {
     const data = await api("/api/pets"); petData = data.pets || [];
-    $("#petStatus").textContent = petData.length ? petData.length.toLocaleString() + " catalog entries · Values coming later" : "Catalog unavailable right now. Try again later.";
+    $("#petStatus").textContent = petData.length
+      ? petData.length.toLocaleString() + " catalog entries · " + (data.variantsKnown ? "variant availability from BIG Games" : "variant availability temporarily unavailable") + " · Values coming later"
+      : "Catalog unavailable right now. Try again later.";
     renderPets();
   } catch (e) { $("#petStatus").textContent = e.message; }
 }
 function renderPets() {
   const q = $("#petSearch").value.toLowerCase(), type = $("#petType").value, variant = $("#petVariant").value;
-  const items = petData.filter(p => p.name.toLowerCase().includes(q) && (type === "all" || String(p.type).toLowerCase().includes(type.toLowerCase())));
+  const items = petData.filter(p => p.name.toLowerCase().includes(q)
+    && (type === "all" || String(p.type).toLowerCase().includes(type.toLowerCase()))
+    && (variant === "all" || (p.variantsKnown && p.variants.includes(variant))));
   $("#petStatus").textContent = items.length + " matching pets · Values coming later";
   $("#petGrid").innerHTML = items.slice(0, 120).map(p => {
-    const image = variant === "Golden" && p.goldenImage ? p.goldenImage : p.image;
-    return '<article class="pet-card"><div class="pet-image">' + (image ? '<img loading="lazy" src="' + escapeAttr(image) + '" alt="">' : '<span>🐾</span>') + '</div><div class="pet-name">' + escapeHtml(p.name) + '</div><div class="pet-type">' + escapeHtml(p.type) + ' · ' + variant + '</div></article>';
+    const image = (variant === "Golden" || variant === "Shiny Golden") && p.goldenImage ? p.goldenImage : p.image;
+    const variantLabel = variant === "all" ? (p.variantsKnown ? (p.variants.length ? p.variants.join(" · ") : "No variant records") : "Variant data unavailable") : variant;
+    return '<article class="pet-card"><div class="pet-image">' + (image ? '<img loading="lazy" src="' + escapeAttr(image) + '" alt="' + escapeAttr(p.name) + '">' : '<span>🐾</span>') + '</div><div class="pet-name">' + escapeHtml(p.name) + '</div><div class="pet-type">' + escapeHtml(p.type) + (p.rarity ? ' · ' + escapeHtml(p.rarity) : '') + '</div><div class="pet-type">' + escapeHtml(variantLabel) + '</div></article>';
   }).join("") || '<p class="muted">No pets found.</p>';
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
