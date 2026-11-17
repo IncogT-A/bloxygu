@@ -121,6 +121,10 @@ async function loadDemoBots() {
   if (!host) return;
   if (botMatch) return renderBotMatch();
   try {
+    if (me) {
+      const mine = await api("/api/arcade/bots/mine");
+      if (mine.match) { botMatch = mine.match; return renderBotMatch(mine.match.status === "completed" ? "Your completed duel was restored." : "Reconnected to your active duel."); }
+    }
     const data = await api("/api/arcade/bots");
     const diceBots = data.bots.filter(b => b.game === "dice");
     const otherBots = data.bots.filter(b => b.game !== "dice");
