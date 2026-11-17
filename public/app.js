@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let me = null, authMode = "login", currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false;
+let me = null, authMode = "login", currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, petLimit = 60;
 
 function toast(message) {
   const el = $("#toast"); el.textContent = message; el.classList.add("show");
@@ -78,17 +78,22 @@ function renderPets() {
     && (type === "all" || String(p.type).toLowerCase().includes(type.toLowerCase()))
     && (variant === "all" || (p.variantsKnown && p.variants.includes(variant))));
   $("#petStatus").textContent = items.length + " matching pets · Values coming later";
-  $("#petGrid").innerHTML = items.slice(0, 120).map(p => {
+  $("#petGrid").innerHTML = items.slice(0, petLimit).map(p => {
     const image = (variant === "Golden" || variant === "Shiny Golden") && p.goldenImage ? p.goldenImage : p.image;
     const variantLabel = variant === "all" ? (p.variantsKnown ? (p.variants.length ? p.variants.join(" · ") : "No variant records") : "Variant data unavailable") : variant;
     return '<article class="pet-card"><div class="pet-image">' + (image ? '<img loading="lazy" src="' + escapeAttr(image) + '" alt="' + escapeAttr(p.name) + '">' : '<span>🐾</span>') + '</div><div class="pet-name">' + escapeHtml(p.name) + '</div><div class="pet-type">' + escapeHtml(p.type) + (p.rarity ? ' · ' + escapeHtml(p.rarity) : '') + '</div><div class="pet-type">' + escapeHtml(variantLabel) + '</div></article>';
   }).join("") || '<p class="muted">No pets found.</p>';
+  const more = $("#loadMorePets");
+  more.classList.toggle("hidden", items.length <= petLimit);
+  more.textContent = "Load more pets (" + Math.min(petLimit, items.length) + "/" + items.length + ")";
+  $("#petGrid").querySelectorAll("img").forEach(img => img.addEventListener("error", () => { img.parentElement.textContent = "🐾"; }, { once: true }));
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 function escapeAttr(s) { return escapeHtml(s); }
-$("#petSearch").addEventListener("input", renderPets);
-$("#petType").addEventListener("change", renderPets);
-$("#petVariant").addEventListener("change", renderPets);
+$("#petSearch").addEventListener("input", () => { petLimit = 60; renderPets(); });
+$("#petType").addEventListener("change", () => { petLimit = 60; renderPets(); });
+$("#petVariant").addEventListener("change", () => { petLimit = 60; renderPets(); });
+$("#loadMorePets").addEventListener("click", () => { petLimit += 60; renderPets(); });
 
 async function loadAccountActivity() {
   try {
