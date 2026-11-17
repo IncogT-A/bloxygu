@@ -6,7 +6,8 @@ A fan-made Pet Simulator 99 community hub with a live pet catalogue, player acco
 
 - Responsive mobile-first interface.
 - Registration and login with bcrypt password hashing.
-- Session cookies stored on disk.
+- Session cookies stored on disk (sessions may reset when a free host restarts; players can log in again).
+- PostgreSQL-backed persistent player data when `DATABASE_URL` is configured; local JSON remains available for development.
 - Demo-credit wallet, welcome balance, and daily bonus.
 - Color Dice, Coinflip, Upgrader, and server-managed Mines game.
 - Pet index loaded from the public BIG Games API, with search and type/variant filters when source metadata is available.
