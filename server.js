@@ -24,7 +24,7 @@ if (!pool && !fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify(E
 function readDB() {
   if (dbCache) return dbCache;
   try { return JSON.parse(fs.readFileSync(DB_FILE, "utf8")); }
-  catch { return { users: [], transactions: [], requests: [], activeMines: {} }; }
+  catch { return { users: [], transactions: [], requests: [], activeMines: {}, activeBlackjack: {}, verificationChallenges: [] }; }
 }
 async function writeDB(db) {
   dbCache = db;
@@ -194,6 +194,7 @@ app.post("/api/roblox/verify/check", limitAuth, async (req, res) => {
 });
 
 app.post("/api/register", limitAuth, async (req, res) => {
+  if (process.env.NODE_ENV === "production") return res.status(410).json({ error: "Password registration is disabled. Sign in with Roblox verification." });
   const username = String(req.body.username || "").trim();
   const password = String(req.body.password || "");
   if (!/^[a-zA-Z0-9_]{3,18}$/.test(username)) return res.status(400).json({ error: "Username must be 3–18 letters, numbers or underscores." });
@@ -209,6 +210,7 @@ app.post("/api/register", limitAuth, async (req, res) => {
 });
 
 app.post("/api/login", limitAuth, async (req, res) => {
+  if (process.env.NODE_ENV === "production") return res.status(410).json({ error: "Password login is disabled. Sign in with Roblox verification." });
   const username = String(req.body.username || "").trim();
   const password = String(req.body.password || "");
   const db = readDB();
@@ -238,13 +240,7 @@ app.get("/api/requests", auth, (req, res) => {
   res.json({ requests: req.db.requests.filter(item => item.userId === req.user.id).slice(0, 50) });
 });
 
-app.post("/api/profile", auth, async (req, res) => {
-  const roblox = String(req.body.roblox || "").trim();
-  if (roblox && !/^[a-zA-Z0-9_]{3,20}$/.test(roblox)) return res.status(400).json({ error: "Roblox username must be 3–20 letters, numbers or underscores." });
-  req.user.roblox = roblox;
-  await writeDB(req.db);
-  res.json({ user: cleanUser(req.user), note: "Roblox username saved. This does not verify account ownership." });
-});
+app.post("/api/profile", auth, (req, res) => res.status(410).json({ error: "Roblox accounts can only be linked through profile verification." }));
 
 app.get("/api/leaderboard", (req, res) => {
   const db = readDB();
@@ -255,6 +251,7 @@ app.post("/api/game", auth, async (req, res) => {
   const game = String(req.body.game || "");
   const bet = Math.floor(Number(req.body.bet));
   if (!Number.isFinite(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
+  if (req.db.activeMines?.[req.user.id] || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your active game round first." });
   if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
 
   let win = false, payout = 0, result = {};
@@ -303,7 +300,7 @@ app.post("/api/mines/start", auth, async (req, res) => {
   if (!Number.isFinite(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
   if (!Number.isInteger(mines) || mines < 1 || mines > 24) return res.status(400).json({ error: "Choose 1–24 mines." });
   if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
-  if (mineRounds.has(req.user.id)) return res.status(409).json({ error: "Finish or cash out your current Mines round first." });
+  if (mineRounds.has(req.user.id) || req.db.activeBlackjack?.[req.user.id]) return res.status(409).json({ error: "Finish your active game round first." });
   const positions = new Set();
   while (positions.size < mines) positions.add(Math.floor(Math.random() * 25));
   const round = { bet, mines, positions, picks: new Set(), multiplier: 1 };
@@ -377,7 +374,7 @@ app.post("/api/blackjack/start", auth, async (req, res) => {
   const bet = Math.floor(Number(req.body.bet));
   if (!Number.isInteger(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
   if (req.user.credits < bet) return res.status(400).json({ error: "Not enough demo credits." });
-  if (req.db.activeBlackjack[req.user.id]) return res.status(409).json({ error: "Finish your current Blackjack hand first." });
+  if (req.db.activeBlackjack[req.user.id] || req.db.activeMines?.[req.user.id]) return res.status(409).json({ error: "Finish your active game round first." });
   const deck = blackjackDeck();
   const round = { bet, deck, player: [deck.pop(), deck.pop()], dealer: [deck.pop(), deck.pop()], finished: false, outcome: null };
   req.user.credits -= bet;
