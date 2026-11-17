@@ -9,16 +9,50 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
+const { Pool } = require("pg");
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 })
+  : null;
+const EMPTY_DB = { users: [], transactions: [], requests: [] };
+let dbCache = null;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, "sessions"), { recursive: true });
-if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ users: [], transactions: [], requests: [] }, null, 2));
+if (!pool && !fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify(EMPTY_DB, null, 2));
 
 function readDB() {
+  if (dbCache) return dbCache;
   try { return JSON.parse(fs.readFileSync(DB_FILE, "utf8")); }
   catch { return { users: [], transactions: [], requests: [] }; }
 }
-function writeDB(db) { const temp = DB_FILE + ".tmp"; fs.writeFileSync(temp, JSON.stringify(db, null, 2)); fs.renameSync(temp, DB_FILE); }
+async function writeDB(db) {
+  dbCache = db;
+  if (pool) {
+    await pool.query(
+      "INSERT INTO bloxygu_state (id, state) VALUES (1, $1::jsonb) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state",
+      [JSON.stringify(db)]
+    );
+    return;
+  }
+  const temp = DB_FILE + ".tmp";
+  fs.writeFileSync(temp, JSON.stringify(db, null, 2));
+  fs.renameSync(temp, DB_FILE);
+}
+async function initDB() {
+  if (pool) {
+    await pool.query("CREATE TABLE IF NOT EXISTS bloxygu_state (id integer PRIMARY KEY, state jsonb NOT NULL)");
+    const result = await pool.query("SELECT state FROM bloxygu_state WHERE id = 1");
+    if (result.rows.length) dbCache = result.rows[0].state;
+    else {
+      dbCache = EMPTY_DB;
+      await pool.query("INSERT INTO bloxygu_state (id, state) VALUES (1, $1::jsonb)", [JSON.stringify(dbCache)]);
+    }
+    console.log("Bloxygu database: PostgreSQL");
+  } else {
+    dbCache = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    console.log("Bloxygu database: local JSON (development only)");
+  }
+}
 function cleanUser(user) {
   return { id: user.id, username: user.username, credits: user.credits, roblox: user.roblox || "", createdAt: user.createdAt };
 }
@@ -78,7 +112,7 @@ app.post("/api/register", limitAuth, async (req, res) => {
   const user = { id: require("crypto").randomUUID(), username, passwordHash: await bcrypt.hash(password, 12), credits: 25000, roblox: "", lastDaily: null, createdAt: new Date().toISOString() };
   db.users.push(user);
   transaction(db, user, "bonus", 25000, "Welcome bonus — demo credits");
-  writeDB(db);
+  await writeDB(db);
   req.session.userId = user.id;
   res.json({ user: cleanUser(user) });
 });
@@ -95,13 +129,13 @@ app.post("/api/login", limitAuth, async (req, res) => {
 
 app.post("/api/logout", (req, res) => req.session.destroy(() => { res.clearCookie("bloxygu.sid"); res.json({ ok: true }); }));
 
-app.post("/api/daily", auth, (req, res) => {
+app.post("/api/daily", auth, async (req, res) => {
   const now = Date.now();
   if (req.user.lastDaily && now - new Date(req.user.lastDaily).getTime() < 20 * 60 * 60 * 1000) return res.status(429).json({ error: "Your daily bonus is still cooling down." });
   req.user.credits += 1000;
   req.user.lastDaily = new Date(now).toISOString();
   transaction(req.db, req.user, "daily", 1000, "Daily demo credit bonus");
-  writeDB(req.db);
+  await writeDB(req.db);
   res.json({ user: cleanUser(req.user) });
 });
 
@@ -113,11 +147,11 @@ app.get("/api/requests", auth, (req, res) => {
   res.json({ requests: req.db.requests.filter(item => item.userId === req.user.id).slice(0, 50) });
 });
 
-app.post("/api/profile", auth, (req, res) => {
+app.post("/api/profile", auth, async (req, res) => {
   const roblox = String(req.body.roblox || "").trim();
   if (roblox && !/^[a-zA-Z0-9_]{3,20}$/.test(roblox)) return res.status(400).json({ error: "Roblox username must be 3–20 letters, numbers or underscores." });
   req.user.roblox = roblox;
-  writeDB(req.db);
+  await writeDB(req.db);
   res.json({ user: cleanUser(req.user), note: "Roblox username saved. This does not verify account ownership." });
 });
 
@@ -126,7 +160,7 @@ app.get("/api/leaderboard", (req, res) => {
   res.json({ users: db.users.slice().sort((a, b) => b.credits - a.credits).slice(0, 10).map(u => ({ username: u.username, credits: u.credits })) });
 });
 
-app.post("/api/game", auth, (req, res) => {
+app.post("/api/game", auth, async (req, res) => {
   const game = String(req.body.game || "");
   const bet = Math.floor(Number(req.body.bet));
   if (!Number.isFinite(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
@@ -166,13 +200,13 @@ app.post("/api/game", auth, (req, res) => {
 
   req.user.credits = req.user.credits - bet + payout;
   transaction(req.db, req.user, game, payout - bet, win ? "Won demo game" : "Lost demo game");
-  writeDB(req.db);
+  await writeDB(req.db);
   res.json({ win, payout, net: payout - bet, result, user: cleanUser(req.user) });
 });
 
 // Mines is a server-managed round: the client never receives mine positions before cashout.
 const mineRounds = new Map();
-app.post("/api/mines/start", auth, (req, res) => {
+app.post("/api/mines/start", auth, async (req, res) => {
   const bet = Math.floor(Number(req.body.bet));
   const mines = Math.floor(Number(req.body.mines));
   if (!Number.isFinite(bet) || bet < 10 || bet > 5000) return res.status(400).json({ error: "Bet must be between 10 and 5,000 demo credits." });
@@ -184,7 +218,7 @@ app.post("/api/mines/start", auth, (req, res) => {
   mineRounds.set(req.user.id, { bet, mines, positions, picks: new Set(), multiplier: 1 });
   req.user.credits -= bet;
   transaction(req.db, req.user, "mines-start", -bet, "Started Mines round");
-  writeDB(req.db);
+  await writeDB(req.db);
   res.json({ user: cleanUser(req.user), safePicks: 0, multiplier: 1, active: true });
 });
 app.get("/api/mines/state", auth, (req, res) => {
@@ -192,7 +226,7 @@ app.get("/api/mines/state", auth, (req, res) => {
   if (!round) return res.json({ active: false });
   res.json({ active: true, bet: round.bet, mines: round.mines, safePicks: round.picks.size, picks: Array.from(round.picks), multiplier: Number(round.multiplier.toFixed(3)) });
 });
-app.post("/api/mines/pick", auth, (req, res) => {
+app.post("/api/mines/pick", auth, async (req, res) => {
   const round = mineRounds.get(req.user.id);
   if (!round) return res.status(400).json({ error: "Start a Mines round first." });
   const tile = Number(req.body.tile);
@@ -201,31 +235,31 @@ app.post("/api/mines/pick", auth, (req, res) => {
   if (round.positions.has(tile)) {
     mineRounds.delete(req.user.id);
     transaction(req.db, req.user, "mines-loss", 0, "Hit a mine");
-    writeDB(req.db);
+    await writeDB(req.db);
     return res.json({ hit: true, tile, mines: Array.from(round.positions), user: cleanUser(req.user), ended: true });
   }
   const previousSafePicks = round.picks.size - 1;
   round.multiplier *= ((25 - previousSafePicks) / (25 - round.mines - previousSafePicks)) * 0.97;
   res.json({ hit: false, tile, safePicks: round.picks.size, multiplier: Number(round.multiplier.toFixed(3)), ended: false });
 });
-app.post("/api/mines/cashout", auth, (req, res) => {
+app.post("/api/mines/cashout", auth, async (req, res) => {
   const round = mineRounds.get(req.user.id);
   if (!round || round.picks.size < 1) return res.status(400).json({ error: "Pick at least one safe tile before cashing out." });
   const payout = Math.floor(round.bet * round.multiplier);
   req.user.credits += payout;
   mineRounds.delete(req.user.id);
   transaction(req.db, req.user, "mines-cashout", payout, "Cashed out Mines round");
-  writeDB(req.db);
+  await writeDB(req.db);
   res.json({ payout, multiplier: Number(round.multiplier.toFixed(3)), user: cleanUser(req.user), ended: true });
 });
 
-app.post("/api/requests", auth, (req, res) => {
+app.post("/api/requests", auth, async (req, res) => {
   const kind = String(req.body.kind || "");
   const details = String(req.body.details || "").trim().slice(0, 300);
   if (!["deposit", "withdrawal"].includes(kind) || !details) return res.status(400).json({ error: "Choose a request type and enter the details." });
   const request = { id: require("crypto").randomUUID(), userId: req.user.id, username: req.user.username, kind, details, status: "pending", createdAt: new Date().toISOString() };
   req.db.requests.unshift(request);
-  writeDB(req.db);
+  await writeDB(req.db);
   res.json({ request, message: "Request saved as pending. No pet or item has been transferred." });
 });
 
@@ -300,4 +334,9 @@ app.get("/api/pets", async (req, res) => {
 });
 
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.listen(PORT, () => console.log("Bloxygu running on port " + PORT));
+initDB()
+  .then(() => app.listen(PORT, "0.0.0.0", () => console.log("Bloxygu running on port " + PORT)))
+  .catch(error => {
+    console.error("Bloxygu database startup failed:", error);
+    process.exit(1);
+  });
