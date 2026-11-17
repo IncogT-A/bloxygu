@@ -15,7 +15,13 @@ function updateUser(user) {
   me = user;
   $("#balance").classList.toggle("hidden", !me);
   $("#balance").textContent = me ? "◆ " + me.credits.toLocaleString() : "";
-  $("#accountButton").textContent = me ? (me.displayName || me.username) : "Log in";
+  $("#accountButton").replaceChildren();
+  if (me && me.avatarUrl) {
+    const avatar = document.createElement("img"); avatar.src = me.avatarUrl; avatar.alt = ""; avatar.className = "account-avatar";
+    $("#accountButton").append(avatar);
+  }
+  const accountLabel = document.createElement("span"); accountLabel.textContent = me ? (me.displayName || me.username) : "Log in";
+  $("#accountButton").append(accountLabel);
 }
 function showPage(page) {
   document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
@@ -38,6 +44,9 @@ function openAuth(mode = "login") {
 $("#accountButton").addEventListener("click", () => {
   if (!me) return openAuth("login");
   $("#profileName").textContent = me.displayName || me.username; $("#profileBalance").textContent = me.credits.toLocaleString() + " demo credits";
+  $("#profileAvatar").replaceChildren();
+  if (me.avatarUrl) { const img = document.createElement("img"); img.src = me.avatarUrl; img.alt = "Roblox avatar"; $("#profileAvatar").append(img); }
+  $("#profileAvatar").classList.toggle("hidden", !me.avatarUrl);
   $("#profileRoblox").textContent = me.roblox ? "✓ Verified Roblox: @" + me.roblox : "No verified Roblox account"; $("#profileMessage").textContent = "";
   $("#profileModal").classList.remove("hidden");
   loadAccountActivity();
@@ -174,7 +183,7 @@ const gameInfo = {
   blackjack: ["Blackjack", "Beat the dealer. Blackjack pays 3:2; dealer stands on 17."]
 };
 function setGame(game) {
-  if (activeMines || activeBlackjack) { if (game !== currentGame) toast("Finish your current round before switching games."); return; }
+  if (activeMines || activeBlackjack) { toast("Finish your current round before switching games."); return; }
   currentGame = game; if (game === "coinflip") selectedChoice = "heads"; if (game === "dice") selectedChoice = "red"; document.querySelectorAll(".game-tab").forEach(b => b.classList.toggle("active", b.dataset.game === game));
   $("#gameTitle").textContent = gameInfo[game][0]; $("#gameDescription").textContent = gameInfo[game][1];
   $("#gameResult").textContent = "Place a demo bet to play.";
@@ -257,6 +266,9 @@ function bindBlackjackButtons() {
   $("#blackjackStand")?.addEventListener("click", () => playBlackjackAction("stand"));
 }
 async function playBlackjackAction(action) {
+  const controls = $("#gameOptions").querySelectorAll("button");
+  controls.forEach(button => button.disabled = true);
+  $("#playGame").disabled = true;
   try {
     const data = await api("/api/blackjack/" + action, { method: "POST", body: "{}" });
     updateUser(data.user); showBlackjack(data.round);
@@ -268,6 +280,7 @@ async function playBlackjackAction(action) {
       $("#gameResult").textContent = "Your total: " + data.round.playerValue + " · Hit or stand.";
     }
   } catch (e) { toast(e.message); }
+  finally { $("#playGame").disabled = false; $("#gameOptions").querySelectorAll("button").forEach(button => button.disabled = false); }
 }
 
 async function init() {
@@ -277,7 +290,7 @@ async function init() {
     try {
       const blackjackState = await api("/api/blackjack/state");
       if (blackjackState.active) {
-        currentGame = "blackjack"; activeBlackjack = true; setGame("blackjack"); showBlackjack(blackjackState.round);
+        currentGame = "blackjack"; setGame("blackjack"); activeBlackjack = true; showBlackjack(blackjackState.round);
         $("#gameOptions").innerHTML = '<button id="blackjackHit" class="choice selected">Hit</button><button id="blackjackStand" class="choice">Stand</button>'; bindBlackjackButtons();
         $("#gameResult").textContent = "Your move — hit or stand."; $("#playGame").textContent = "Stand"; showPage("games"); return;
       }
