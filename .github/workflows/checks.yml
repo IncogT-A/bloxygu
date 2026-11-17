@@ -16,3 +16,19 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run check
+      - name: Smoke test server and account session
+        run: |
+          mkdir -p "$RUNNER_TEMP/bloxygu-data"
+          DATA_DIR="$RUNNER_TEMP/bloxygu-data" SESSION_SECRET="ci-test-session-secret" PORT=3333 node server.js > "$RUNNER_TEMP/bloxygu-server.log" 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 20); do
+            if curl --silent --fail http://127.0.0.1:3333/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:3333/api/health
+          curl --fail -c "$RUNNER_TEMP/bloxygu-cookie.txt" -b "$RUNNER_TEMP/bloxygu-cookie.txt" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"ciuser123","password":"testpassword123"}' \
+            http://127.0.0.1:3333/api/register
+          curl --fail -b "$RUNNER_TEMP/bloxygu-cookie.txt" http://127.0.0.1:3333/api/me
