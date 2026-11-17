@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let me = null, robloxCandidate = null, robloxChallengeId = null, currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, petLimit = 60;
+let me = null, robloxCandidate = null, robloxChallengeId = null, currentGame = "dice", selectedChoice = "red", petData = [], activeMines = false, activeBlackjack = false, petLimit = 60;
 
 function toast(message) {
   const el = $("#toast"); el.textContent = message; el.classList.add("show");
@@ -178,10 +178,11 @@ const gameInfo = {
   dice: ["Color Dice Duel", "Pick a color. Match the roll and win 3× your bet."],
   coinflip: ["Coinflip", "Call heads or tails. Correct calls pay 2×."],
   mines: ["Mines", "Pick safe tiles, avoid hidden mines, and cash out before you hit one."],
-  upgrader: ["Upgrader", "Choose a multiplier. Higher targets have lower win chances."]
+  upgrader: ["Upgrader", "Choose a multiplier. Higher targets have lower win chances."],
+  blackjack: ["Blackjack", "Beat the dealer. Blackjack pays 3:2; dealer stands on 17."]
 };
 function setGame(game) {
-  if (activeMines) { if (game !== currentGame) toast("Cash out your Mines round before switching games."); return; }
+  if (activeMines || activeBlackjack) { if (game !== currentGame) toast("Finish your current round before switching games."); return; }
   currentGame = game; if (game === "coinflip") selectedChoice = "heads"; if (game === "dice") selectedChoice = "red"; document.querySelectorAll(".game-tab").forEach(b => b.classList.toggle("active", b.dataset.game === game));
   $("#gameTitle").textContent = gameInfo[game][0]; $("#gameDescription").textContent = gameInfo[game][1];
   $("#gameResult").textContent = "Place a demo bet to play.";
@@ -191,12 +192,14 @@ function setGame(game) {
   $("#playGame").textContent = "Play round";
   if (game === "mines") opts.innerHTML = '<label class="control-label">Mine count</label><input id="mineCount" class="field" type="number" min="1" max="24" value="3"><p class="small-note">Pick safe tiles, then cash out.</p>';
   if (game === "upgrader") opts.innerHTML = '<label class="control-label">Target multiplier</label><input id="targetMultiplier" class="field" type="number" min="1.1" max="10" step=".1" value="2">';
+  if (game === "blackjack") opts.innerHTML = '<p class="small-note">Hit to draw another card or stand to let the dealer play. Blackjack pays 3:2.</p>';
   opts.querySelectorAll("[data-choice]").forEach(b => b.addEventListener("click", () => { selectedChoice = b.dataset.choice; opts.querySelectorAll(".choice").forEach(x => x.classList.toggle("selected", x === b)); }));
-  $("#gameDisplay").innerHTML = '<div class="dice-face">' + (game === "coinflip" ? "◐" : game === "mines" ? "✹" : game === "upgrader" ? "↑" : "?") + '</div>';
+  $("#gameDisplay").innerHTML = '<div class="dice-face">' + (game === "coinflip" ? "◐" : game === "mines" ? "✹" : game === "upgrader" ? "↑" : game === "blackjack" ? "21" : "?") + '</div>';
 }
 document.querySelectorAll(".game-tab").forEach(b => b.addEventListener("click", () => setGame(b.dataset.game)));
 $("#playGame").addEventListener("click", async () => {
   if (!me) return openAuth("login");
+  if (currentGame === "blackjack" && activeBlackjack) return playBlackjackAction("stand");
   if (currentGame === "mines" && activeMines) {
     try {
       const data = await api("/api/mines/cashout", { method: "POST", body: "{}" });
@@ -222,6 +225,7 @@ $("#playGame").addEventListener("click", async () => {
     finally { $("#playGame").disabled = false; }
     return;
   }
+  if (currentGame === "blackjack") return startBlackjack(bet);
   const payload = { game: currentGame, bet };
   if (currentGame === "dice" || currentGame === "coinflip") payload.choice = selectedChoice;
   if (currentGame === "mines") payload.mines = Number($("#mineCount").value);
@@ -240,11 +244,52 @@ $("#playGame").addEventListener("click", async () => {
   } catch (e) { toast(e.message); }
   finally { $("#playGame").disabled = false; $("#playGame").innerHTML = 'Play round <span>↗</span>'; }
 });
+
+function showBlackjack(round) {
+  const cardText = card => card.hidden ? "🂠" : card.rank + card.suit;
+  $("#gameDisplay").innerHTML = '<div class="blackjack-table"><div><small>DEALER</small><div class="playing-cards">' + round.dealer.map(c => '<span class="playing-card">' + cardText(c) + '</span>').join("") + '</div><b>' + (round.dealerValue == null ? "?" : round.dealerValue) + '</b></div><div><small>YOU</small><div class="playing-cards">' + round.player.map(c => '<span class="playing-card">' + cardText(c) + '</span>').join("") + '</div><b>' + round.playerValue + '</b></div></div>';
+}
+async function startBlackjack(bet) {
+  $("#playGame").disabled = true;
+  try {
+    const data = await api("/api/blackjack/start", { method: "POST", body: JSON.stringify({ bet }) });
+    updateUser(data.user); showBlackjack(data.round); activeBlackjack = !data.round.finished;
+    if (data.round.finished) $("#gameResult").textContent = "Natural blackjack! " + data.round.outcome + " · Payout " + data.payout.toLocaleString();
+    else { $("#gameResult").textContent = "Your move — hit or stand."; $("#gameOptions").innerHTML = '<button id="blackjackHit" class="choice selected">Hit</button><button id="blackjackStand" class="choice">Stand</button>'; bindBlackjackButtons(); }
+    $("#playGame").textContent = "Stand";
+  } catch (e) { toast(e.message); }
+  finally { $("#playGame").disabled = false; }
+}
+function bindBlackjackButtons() {
+  $("#blackjackHit")?.addEventListener("click", () => playBlackjackAction("hit"));
+  $("#blackjackStand")?.addEventListener("click", () => playBlackjackAction("stand"));
+}
+async function playBlackjackAction(action) {
+  try {
+    const data = await api("/api/blackjack/" + action, { method: "POST", body: "{}" });
+    updateUser(data.user); showBlackjack(data.round);
+    if (data.round.finished) {
+      activeBlackjack = false; $("#gameOptions").innerHTML = '<p class="small-note">Hand finished. Place another bet to play again.</p>';
+      $("#gameResult").textContent = "Hand: " + data.round.outcome.toUpperCase() + " · Payout " + Number(data.payout || 0).toLocaleString() + " demo credits";
+      $("#playGame").textContent = "Play again";
+    } else {
+      $("#gameResult").textContent = "Your total: " + data.round.playerValue + " · Hit or stand.";
+      bindBlackjackButtons();
+    }
+  } catch (e) { toast(e.message); }
+}
+
 async function init() {
   try { const data = await api("/api/me"); updateUser(data.user); } catch { updateUser(null); }
   setGame("dice");
   if (me) {
     try {
+      const blackjackState = await api("/api/blackjack/state");
+      if (blackjackState.active) {
+        currentGame = "blackjack"; activeBlackjack = true; setGame("blackjack"); showBlackjack(blackjackState.round);
+        $("#gameOptions").innerHTML = '<button id="blackjackHit" class="choice selected">Hit</button><button id="blackjackStand" class="choice">Stand</button>'; bindBlackjackButtons();
+        $("#gameResult").textContent = "Your move — hit or stand."; $("#playGame").textContent = "Stand"; showPage("games"); return;
+      }
       const state = await api("/api/mines/state");
       if (state.active) {
         setGame("mines"); activeMines = true;
